@@ -67,7 +67,7 @@ test("presentation is allowlisted and sanitized", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
   await store.write({ version: 1, posts: {}, presentations: { "11111111-1111-4111-8111-111111111111": { registered_at: "now" } } });
-  const client = { record: async () => ({ direction: "from_discourse", resource_id: "11111111-1111-4111-8111-111111111111", cooked_html: '<p onclick="bad()">Safe</p><script>bad()</script>', topic_url: "https://forum.example/t/safe/1" }) };
+  const client = { record: async () => ({ bridge_record: { direction: "from_discourse", state: "healthy", resource_id: "11111111-1111-4111-8111-111111111111", content_html: '<p onclick="bad()">Safe</p><script>bad()</script>', topic_url: "https://forum.example/t/safe/1" } }) };
   const server = buildServer(cfg, store, client);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
