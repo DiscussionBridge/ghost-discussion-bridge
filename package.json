@@ -1,0 +1,17 @@
+{
+  "name": "ghost-discussion-bridge",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test",
+    "check": "node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/state-store.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check public/discussionbridge-loader.js"
+  },
+  "dependencies": {
+    "sanitize-html": "2.17.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
