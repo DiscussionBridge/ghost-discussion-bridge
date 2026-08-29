@@ -18,11 +18,14 @@ async function config() {
 
 test("maps an authoritative published Ghost post", async () => {
   const cfg = await config();
-  const record = ghostRecord({ post: { current: { id: "abc123", title: "Ghost article", url: "https://ghost.example/ghost-article/", status: "published", tags: [{ name: "#discussionbridge", slug: "hash-discussionbridge" }] } } }, cfg, "correlation");
+  const record = ghostRecord({ post: { current: { id: "abc123", title: "Ghost article", html: "<p>Useful Ghost content.</p>", url: "https://ghost.example/ghost-article/", status: "published", tags: [{ name: "#discussionbridge", slug: "hash-discussionbridge" }] } } }, cfg, "correlation");
+  assert.equal(record.content_html, "<p>Useful Ghost content.</p>");
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
-  assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", url: "https://evil.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /outside/);
-  assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", url: "https://ghost.example/x/", status: "published", tags: [] } } }, cfg, "c"), /opted in/);
+  assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "<p>X</p>", url: "https://evil.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /outside/);
+  assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "<p>X</p>", url: "https://ghost.example/x/", status: "published", tags: [] } } }, cfg, "c"), /opted in/);
+  assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "  ", url: "https://ghost.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /published content/);
+  assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "x".repeat((48 * 1024) + 1), url: "https://ghost.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /published content/);
 });
 
 test("uses bounded credentialed requests without following redirects", async () => {
@@ -42,7 +45,7 @@ test("webhook resolves once and persists no secret", async () => {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const address = server.address();
-    const body = JSON.stringify({ post: { current: { id: "abc", title: "Article", url: "https://ghost.example/article/", status: "published", tags: [{ name: "#discussionbridge" }] } } });
+    const body = JSON.stringify({ post: { current: { id: "abc", title: "Article", html: "<p>Webhook article content.</p>", url: "https://ghost.example/article/", status: "published", tags: [{ name: "#discussionbridge" }] } } });
     const timestamp = String(Date.now());
     const signature = createHmac("sha256", "w".repeat(32)).update(`${body}${timestamp}`).digest("hex");
     const response = await fetch(`http://127.0.0.1:${address.port}/webhooks/ghost`, { method: "POST", headers: { "Content-Type": "application/json", "X-Ghost-Signature": `sha256=${signature}, t=${timestamp}` }, body });

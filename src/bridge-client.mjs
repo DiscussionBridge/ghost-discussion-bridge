@@ -1,4 +1,5 @@
 const MAX_BYTES = 65_536;
+const MAX_CONTENT_HTML_BYTES = 48 * 1024;
 
 function boundedString(value, maximum, label) {
   if (typeof value !== "string" || value.trim() === "" || Buffer.byteLength(value) > maximum) {
@@ -73,6 +74,7 @@ export function ghostRecord(payload, config, correlationId) {
   if (!current || typeof current !== "object") throw new Error("Invalid Ghost webhook");
   const id = boundedString(current.id, 255, "Ghost post ID");
   const title = boundedString(current.title, 1024, "title");
+  const contentHtml = boundedString(current.html, MAX_CONTENT_HTML_BYTES, "published content");
   const url = new URL(boundedString(current.url, 2048, "canonical URL"));
   if (url.origin !== config.ghostOrigin || !url.pathname.startsWith("/")) throw new Error("Canonical URL is outside Ghost origin");
   if (current.status !== "published") throw new Error("Ghost post is not published");
@@ -84,6 +86,7 @@ export function ghostRecord(payload, config, correlationId) {
     external_id: `ghost-post:${id}`,
     canonical_url: url.href,
     title,
+    content_html: contentHtml,
     published: true,
     visibility: "unlisted",
     adapter_id: "ghost-discussionbridge",

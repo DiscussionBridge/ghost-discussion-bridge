@@ -8,6 +8,9 @@ runs as a small loopback-only Node service beside Ghost.
 - The service sends bounded authenticated create-or-resolve requests to the
   receiving Discourse plugin and durably stores the returned resource/topic
   identity.
+- The request carries Ghost's rendered published HTML as a bounded content
+  snapshot, so the receiving topic contains the article rather than only a
+  companion link. Empty or oversized source content fails before delivery.
 - Explicitly registered From Discourse resources are pulled server-side and
   exposed through a same-origin Nginx route as sanitized HTML. The supplied
   loader renders that HTML into an explicit Ghost post placeholder.
