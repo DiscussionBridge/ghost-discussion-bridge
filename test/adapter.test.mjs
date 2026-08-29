@@ -64,3 +64,13 @@ test("presentation is allowlisted and sanitized", async () => {
     assert.doesNotMatch(html, /onclick|script/);
   } finally { server.close(); }
 });
+
+test("serialized state updates retain concurrent identities", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  await Promise.all(Array.from({ length: 12 }, (_, index) => store.update(async (state) => {
+    await new Promise((resolve) => setTimeout(resolve, index % 3));
+    state.posts[`ghost-post:${index}`] = { resource_id: String(index) };
+  })));
+  assert.equal(Object.keys((await store.read()).posts).length, 12);
+});

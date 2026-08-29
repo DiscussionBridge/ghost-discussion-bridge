@@ -2,7 +2,10 @@ import { dirname } from "node:path";
 import { mkdir, open, readFile, rename } from "node:fs/promises";
 
 export class StateStore {
-  constructor(path) { this.path = path; }
+  constructor(path) {
+    this.path = path;
+    this.tail = Promise.resolve();
+  }
 
   async read() {
     try {
@@ -24,5 +27,16 @@ export class StateStore {
       await handle.sync();
     } finally { await handle.close(); }
     await rename(temporary, this.path);
+  }
+
+  async update(callback) {
+    const operation = this.tail.then(async () => {
+      const state = await this.read();
+      await callback(state);
+      await this.write(state);
+      return state;
+    });
+    this.tail = operation.catch(() => undefined);
+    return operation;
   }
 }
