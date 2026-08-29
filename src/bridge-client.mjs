@@ -90,7 +90,7 @@ export function ghostRecord(payload, config, correlationId) {
     published: true,
     visibility: "unlisted",
     adapter_id: "ghost-discussionbridge",
-    adapter_version: "0.1.0-alpha.1",
+    adapter_version: "0.1.0-alpha.2",
     correlation_id: correlationId,
     ...(config.lane ? { lane: config.lane } : {}),
   };
