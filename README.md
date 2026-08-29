@@ -3,7 +3,8 @@
 This is the publishing-side Ghost adapter for the DiscussionBridge Alpha. It
 runs as a small loopback-only Node service beside Ghost.
 
-- Ghost `post.published` webhooks enter through a protected, unguessable path.
+- Ghost `post.published` webhooks enter through one exact path and must carry
+  Ghost's native `X-Ghost-Signature` HMAC with a current timestamp.
 - The service sends bounded authenticated create-or-resolve requests to the
   receiving Discourse plugin and durably stores the returned resource/topic
   identity.
@@ -20,9 +21,13 @@ synchronization or a generic control plane.
 
 `DISCUSSIONBRIDGE_SERVER_URL`, `DISCUSSIONBRIDGE_CONNECTION_ID`,
 `DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE`, `DISCUSSIONBRIDGE_GHOST_ORIGIN`,
-`DISCUSSIONBRIDGE_GHOST_WEBHOOK_TOKEN_FILE`, and
+`DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE`, and
 `DISCUSSIONBRIDGE_STATE_FILE`. `DISCUSSIONBRIDGE_PORT` defaults to `8792` and
 `DISCUSSIONBRIDGE_LANE` is optional.
+
+Only posts carrying Ghost's internal `#discussionbridge` tag are eligible.
+Configure only the `post.published` event; ordinary published edits are not an
+implemented synchronization surface.
 
 Register a From Discourse resource without exposing credentials:
 

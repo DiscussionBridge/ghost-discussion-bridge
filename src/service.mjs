@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import sanitizeHtml from "sanitize-html";
 import { BridgeClient, ghostRecord } from "./bridge-client.mjs";
@@ -6,10 +6,15 @@ import { BridgeClient, ghostRecord } from "./bridge-client.mjs";
 const MAX_WEBHOOK_BYTES = 131_072;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
-function tokenMatches(actual, expected) {
-  const a = createHash("sha256").update(actual).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
+function validGhostSignature(header, rawBody, secret, now = Date.now()) {
+  if (typeof header !== "string") return false;
+  const match = /^sha256=([a-f0-9]{64}), t=([0-9]{13})$/u.exec(header);
+  if (!match) return false;
+  const timestamp = Number(match[2]);
+  if (!Number.isSafeInteger(timestamp) || Math.abs(now - timestamp) > 300_000) return false;
+  const actual = Buffer.from(match[1], "hex");
+  const expected = createHmac("sha256", secret).update(`${rawBody}${match[2]}`).digest();
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 async function body(request) {
@@ -39,11 +44,11 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://127.0.0.1");
-      if (request.method === "POST" && url.pathname.startsWith("/webhooks/ghost/")) {
-        const token = decodeURIComponent(url.pathname.slice("/webhooks/ghost/".length));
-        if (!tokenMatches(token, config.webhookToken)) return json(response, 404, { error: "not_found" });
+      if (request.method === "POST" && url.pathname === "/webhooks/ghost") {
         if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return json(response, 415, { error: "content_type" });
-        const payload = JSON.parse(await body(request));
+        const rawBody = await body(request);
+        if (!validGhostSignature(request.headers["x-ghost-signature"], rawBody, config.webhookSecret)) return json(response, 404, { error: "not_found" });
+        const payload = JSON.parse(rawBody);
         const record = ghostRecord(payload, config, `ghost-${randomUUID()}`);
         const result = await client.resolve(record);
         if (!UUID.test(result.resource_id ?? "") || !Number.isSafeInteger(result.topic_id) || result.topic_id <= 0 || !["created", "resolved"].includes(result.outcome) || result.core_fallback !== false) {
@@ -74,3 +79,5 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
     }
   });
 }
+
+export { validGhostSignature };

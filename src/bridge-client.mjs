@@ -76,6 +76,9 @@ export function ghostRecord(payload, config, correlationId) {
   const url = new URL(boundedString(current.url, 2048, "canonical URL"));
   if (url.origin !== config.ghostOrigin || !url.pathname.startsWith("/")) throw new Error("Canonical URL is outside Ghost origin");
   if (current.status !== "published") throw new Error("Ghost post is not published");
+  const tags = Array.isArray(current.tags) ? current.tags : [];
+  const optedIn = tags.some((tag) => tag && typeof tag === "object" && (tag.name === "#discussionbridge" || tag.slug === "hash-discussionbridge"));
+  if (!optedIn) throw new Error("Ghost post is not opted in");
   return {
     direction: "to_discourse",
     external_id: `ghost-post:${id}`,
