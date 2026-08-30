@@ -1,11 +1,51 @@
 const MAX_BYTES = 65_536;
 const MAX_CONTENT_HTML_BYTES = 48 * 1024;
+const MAX_SOURCE_AUTHORS = 20;
 
 function boundedString(value, maximum, label) {
   if (typeof value !== "string" || value.trim() === "" || Buffer.byteLength(value) > maximum) {
     throw new Error(`Invalid ${label}`);
   }
   return value;
+}
+
+function sourceAuthorship(current, ghostOrigin) {
+  const rawAuthors = current.authors;
+  if (rawAuthors === undefined || rawAuthors === null) return {};
+  if (!Array.isArray(rawAuthors) || rawAuthors.length < 1 || rawAuthors.length > MAX_SOURCE_AUTHORS) {
+    throw new Error("Invalid Ghost authors");
+  }
+
+  const sourceAuthors = rawAuthors.map((author) => {
+    if (!author || typeof author !== "object") throw new Error("Invalid Ghost author");
+    const ghostId = boundedString(author.id, 240, "Ghost author ID");
+    const id = `ghost-author:${ghostId}`;
+    const name = boundedString(author.name, 200, "Ghost author name");
+    let profileUrl;
+    if (author.url !== undefined && author.url !== null && author.url !== "") {
+      const parsed = new URL(boundedString(author.url, 2048, "Ghost author URL"));
+      if (parsed.origin !== ghostOrigin || parsed.username || parsed.password || parsed.search || parsed.hash) {
+        throw new Error("Ghost author URL is outside Ghost origin");
+      }
+      profileUrl = parsed.href;
+    }
+    return { id, name, ...(profileUrl ? { profile_url: profileUrl } : {}) };
+  });
+
+  if (new Set(sourceAuthors.map(({ id }) => id)).size !== sourceAuthors.length) {
+    throw new Error("Duplicate Ghost author identity");
+  }
+
+  const primaryGhostId = current.primary_author?.id ?? rawAuthors[0]?.id;
+  const primarySourceAuthorId = `ghost-author:${boundedString(primaryGhostId, 240, "primary Ghost author ID")}`;
+  if (!sourceAuthors.some(({ id }) => id === primarySourceAuthorId)) {
+    throw new Error("Primary Ghost author is not present in authors");
+  }
+
+  return {
+    source_authors: sourceAuthors,
+    primary_source_author_id: primarySourceAuthorId,
+  };
 }
 
 export class BridgeClient {
@@ -81,6 +121,7 @@ export function ghostRecord(payload, config, correlationId) {
   const tags = Array.isArray(current.tags) ? current.tags : [];
   const optedIn = tags.some((tag) => tag && typeof tag === "object" && (tag.name === "#discussionbridge" || tag.slug === "hash-discussionbridge"));
   if (!optedIn) throw new Error("Ghost post is not opted in");
+  const authorship = sourceAuthorship(current, config.ghostOrigin);
   return {
     direction: "to_discourse",
     external_id: `ghost-post:${id}`,
@@ -89,9 +130,10 @@ export function ghostRecord(payload, config, correlationId) {
     content_html: contentHtml,
     published: true,
     visibility: "unlisted",
-    adapter_id: "ghost-discussionbridge",
-    adapter_version: "0.1.0-alpha.3",
+    adapter_id: "ghost-discussion-bridge",
+    adapter_version: "0.1.0-alpha.4",
     correlation_id: correlationId,
+    ...authorship,
     ...(config.lane ? { lane: config.lane } : {}),
   };
 }

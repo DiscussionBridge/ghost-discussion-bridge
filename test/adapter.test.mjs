@@ -16,16 +16,32 @@ async function config() {
   return loadConfig({ DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example", DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567", DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: join(root, "secret"), DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example", DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE: join(root, "webhook"), DISCUSSIONBRIDGE_STATE_FILE: join(root, "state.json"), DISCUSSIONBRIDGE_LANE: "ghost-alpha" });
 }
 
-test("maps an authoritative published Ghost post", async () => {
+test("maps an authoritative published Ghost post and its authors", async () => {
   const cfg = await config();
-  const record = ghostRecord({ post: { current: { id: "abc123", title: "Ghost article", html: "<p>Useful Ghost content.</p>", url: "https://ghost.example/ghost-article/", status: "published", tags: [{ name: "#discussionbridge", slug: "hash-discussionbridge" }] } } }, cfg, "correlation");
+  const record = ghostRecord({ post: { current: { id: "abc123", title: "Ghost article", html: "<p>Useful Ghost content.</p>", url: "https://ghost.example/ghost-article/", status: "published", tags: [{ name: "#discussionbridge", slug: "hash-discussionbridge" }], authors: [{ id: "author-1", name: "Primary Writer", url: "https://ghost.example/author/primary/" }, { id: "author-2", name: "Editor" }], primary_author: { id: "author-1" } } } }, cfg, "correlation");
   assert.equal(record.content_html, "<p>Useful Ghost content.</p>");
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
+  assert.equal(record.adapter_id, "ghost-discussion-bridge");
+  assert.equal(record.adapter_version, "0.1.0-alpha.4");
+  assert.deepEqual(record.source_authors, [
+    { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
+    { id: "ghost-author:author-2", name: "Editor" },
+  ]);
+  assert.equal(record.primary_source_author_id, "ghost-author:author-1");
   assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "<p>X</p>", url: "https://evil.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /outside/);
   assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "<p>X</p>", url: "https://ghost.example/x/", status: "published", tags: [] } } }, cfg, "c"), /opted in/);
   assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "  ", url: "https://ghost.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /published content/);
   assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "x".repeat((48 * 1024) + 1), url: "https://ghost.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /published content/);
+});
+
+test("fails closed on ambiguous Ghost authorship", async () => {
+  const cfg = await config();
+  const base = { id: "abc123", title: "Ghost article", html: "<p>Useful Ghost content.</p>", url: "https://ghost.example/ghost-article/", status: "published", tags: [{ name: "#discussionbridge" }] };
+  assert.throws(() => ghostRecord({ post: { current: { ...base, authors: [] } } }, cfg, "c"), /Ghost authors/);
+  assert.throws(() => ghostRecord({ post: { current: { ...base, authors: [{ id: "one", name: "One" }, { id: "one", name: "Duplicate" }] } } }, cfg, "c"), /Duplicate/);
+  assert.throws(() => ghostRecord({ post: { current: { ...base, authors: [{ id: "one", name: "One" }], primary_author: { id: "two" } } } }, cfg, "c"), /not present/);
+  assert.throws(() => ghostRecord({ post: { current: { ...base, authors: [{ id: "one", name: "One", url: "https://outside.example/author/one/" }] } } }, cfg, "c"), /outside/);
 });
 
 test("uses bounded credentialed requests without following redirects", async () => {
