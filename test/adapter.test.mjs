@@ -23,7 +23,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.13");
+  assert.equal(record.adapter_version, "0.1.0-alpha.14");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -86,7 +86,7 @@ test("presentation is allowlisted and sanitized", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
   await store.write({ version: 1, posts: {}, presentations: { "11111111-1111-4111-8111-111111111111": { registered_at: "now" } } });
-  const client = { record: async () => ({ bridge_record: { direction: "from_discourse", state: "healthy", resource_id: "11111111-1111-4111-8111-111111111111", content_html: '<p onclick="bad()">Safe</p><script>bad()</script>', topic_url: "https://forum.example/t/safe/1" } }) };
+  const client = { record: async () => ({ bridge_record: { direction: "from_discourse", state: "healthy", resource_id: "11111111-1111-4111-8111-111111111111", content_html: '<p onclick="bad()">Safe</p><span class="math evil">E = mc^2</span><div class="math">x^2</div><script>bad()</script>', topic_url: "https://forum.example/t/safe/1" } }) };
   const server = buildServer(cfg, store, client);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
@@ -96,6 +96,9 @@ test("presentation is allowlisted and sanitized", async () => {
     const html = await response.text();
     assert.match(html, /Safe/);
     assert.doesNotMatch(html, /onclick|script/);
+    assert.match(html, /<span class="math">E = mc\^2<\/span>/);
+    assert.match(html, /<div class="math">x\^2<\/div>/);
+    assert.doesNotMatch(html, /class="[^"]*evil/);
     assert.match(html, /class="discussionbridge-presentation__source-link"/);
     assert.match(html, />Open this discussion on The Bridge<\/a>/);
     assert.doesNotMatch(html, />Continue the discussion<\/a>/);

@@ -76,7 +76,20 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
         const record = responseRecord?.bridge_record;
         if (!record || record.direction !== "from_discourse" || record.state !== "healthy" || record.resource_id !== resourceId || typeof record.content_html !== "string") throw new Error("Invalid presentation record");
         const topicUrl = exactTopicUrl(record.topic_url, config.serverUrl);
-        const cooked = sanitizeHtml(record.content_html, { allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]), allowedAttributes: { a: ["href", "title", "rel"], img: ["src", "alt", "title", "width", "height"], code: ["class"], pre: ["class"] }, allowedSchemes: ["https"], allowProtocolRelative: false });
+        const cooked = sanitizeHtml(record.content_html, {
+          allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
+          allowedAttributes: {
+            a: ["href", "title", "rel"],
+            img: ["src", "alt", "title", "width", "height"],
+            code: ["class"],
+            pre: ["class"],
+            span: ["class"],
+            div: ["class"],
+          },
+          allowedClasses: { span: ["math"], div: ["math"] },
+          allowedSchemes: ["https"],
+          allowProtocolRelative: false,
+        });
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" });
         return response.end(`<section class="discussionbridge-presentation">${cooked}<p class="discussionbridge-presentation__source-link"><a href="${topicUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}" rel="noopener noreferrer">Open this discussion on The Bridge</a></p></section>`);
       }
