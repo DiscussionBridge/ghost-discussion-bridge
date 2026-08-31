@@ -84,11 +84,19 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
             code: ["class"],
             pre: ["class"],
             span: ["class"],
-            div: ["class"],
+            div: ["class", "data-discussionbridge-lightbox-meta"],
           },
           allowedClasses: { span: ["math"], div: ["math"] },
           allowedSchemes: ["https"],
           allowProtocolRelative: false,
+          transformTags: {
+            div: (tagName, attributes) => {
+              const { "data-discussionbridge-lightbox-meta": ignored, ...safeAttributes } = attributes;
+              if ((attributes.class ?? "").split(/\s+/u).includes("meta")) safeAttributes["data-discussionbridge-lightbox-meta"] = "true";
+              return { tagName, attribs: safeAttributes };
+            },
+          },
+          exclusiveFilter: (frame) => frame.attribs["data-discussionbridge-lightbox-meta"] === "true",
         });
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" });
         return response.end(`<section class="discussionbridge-presentation">${cooked}<p class="discussionbridge-presentation__source-link"><a href="${topicUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}" rel="noopener noreferrer">Open this discussion on The Bridge</a></p></section>`);
