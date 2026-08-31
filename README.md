@@ -18,6 +18,11 @@ runs as a small loopback-only Node service beside Ghost.
 - Explicitly registered From Discourse resources are pulled server-side and
   exposed through a same-origin Nginx route as sanitized HTML. The supplied
   loader renders that HTML into an explicit Ghost post placeholder.
+- Published Ghost posts can render their exact mapped Discourse discussion.
+  The same-origin loader resolves the current canonical Ghost URL through the
+  adapter's nonsecret comments endpoint, then starts Discourse's standard
+  comments embed with the already-recorded topic ID. No credential or topic
+  identity is placed in Ghost content.
 
 Bridge and webhook secrets live in root-protected files. They are never
 accepted through public JSON, returned in responses, or written to the state
@@ -46,6 +51,13 @@ The Ghost post contains an HTML card such as:
 
 ```html
 <div data-discussionbridge-resource="RESOURCE_UUID"></div>
+<script defer src="/discussionbridge/assets/loader.js"></script>
+```
+
+A To Discourse post can render its mapped replies with:
+
+```html
+<div data-discussionbridge-comments></div>
 <script defer src="/discussionbridge/assets/loader.js"></script>
 ```
 

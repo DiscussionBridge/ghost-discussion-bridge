@@ -7,7 +7,7 @@ import test from "node:test";
 import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
 import { StateStore } from "../src/state-store.mjs";
-import { buildServer, validGhostSignature } from "../src/service.mjs";
+import { buildServer, exactGhostSource, validGhostSignature } from "../src/service.mjs";
 
 async function config() {
   const root = await mkdtemp(join(tmpdir(), "ghost-discussionbridge-"));
@@ -23,7 +23,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.4");
+  assert.equal(record.adapter_version, "0.1.0-alpha.5");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -97,6 +97,29 @@ test("presentation is allowlisted and sanitized", async () => {
     assert.match(html, /Safe/);
     assert.doesNotMatch(html, /onclick|script/);
   } finally { server.close(); }
+});
+
+test("comments lookup exposes only an exact stored Ghost mapping", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  await store.write({ version: 1, posts: { "ghost-post:abc": { resource_id: "11111111-1111-4111-8111-111111111111", topic_id: 42, topic_url: "https://forum.example/t/ghost/42", canonical_url: "https://ghost.example/article/" } }, presentations: {} });
+  const server = buildServer(cfg, store, {});
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/comments?source=${encodeURIComponent("https://ghost.example/article/")}`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { topic_id: 42, topic_url: "https://forum.example/t/ghost/42", forum_origin: "https://forum.example" });
+    assert.equal((await fetch(`http://127.0.0.1:${address.port}/comments?source=${encodeURIComponent("https://ghost.example/missing/")}`)).status, 404);
+    assert.equal((await fetch(`http://127.0.0.1:${address.port}/comments?source=${encodeURIComponent("https://evil.example/article/")}`)).status, 502);
+  } finally { server.close(); }
+});
+
+test("Ghost comment source is exact-origin and canonical", () => {
+  assert.equal(exactGhostSource("https://ghost.example/article/", "https://ghost.example"), "https://ghost.example/article/");
+  assert.throws(() => exactGhostSource("https://evil.example/article/", "https://ghost.example"));
+  assert.throws(() => exactGhostSource("https://ghost.example/article/?draft=1", "https://ghost.example"));
+  assert.throws(() => exactGhostSource("https://ghost.example/article/#comments", "https://ghost.example"));
 });
 
 test("serialized state updates retain concurrent identities", async () => {

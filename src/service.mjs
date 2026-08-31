@@ -40,6 +40,13 @@ function exactTopicUrl(value, serverOrigin) {
   return parsed.href;
 }
 
+function exactGhostSource(value, ghostOrigin) {
+  if (typeof value !== "string" || Buffer.byteLength(value) > 2048) throw new Error("Invalid Ghost source URL");
+  const parsed = new URL(value);
+  if (parsed.origin !== ghostOrigin || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("Invalid Ghost source URL");
+  return parsed.href;
+}
+
 export function buildServer(config, store, client = new BridgeClient(config)) {
   return createServer(async (request, response) => {
     try {
@@ -73,6 +80,16 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" });
         return response.end(`<section class="discussionbridge-presentation">${cooked}<p><a href="${topicUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}" rel="noopener noreferrer">Continue the discussion</a></p></section>`);
       }
+      if (request.method === "GET" && url.pathname === "/comments") {
+        const sourceUrl = exactGhostSource(url.searchParams.get("source"), config.ghostOrigin);
+        const state = await store.read();
+        const matches = Object.values(state.posts).filter((post) => post?.canonical_url === sourceUrl);
+        if (matches.length !== 1) return json(response, 404, { error: "not_found" });
+        const post = matches[0];
+        if (!UUID.test(post.resource_id ?? "") || !Number.isSafeInteger(post.topic_id) || post.topic_id <= 0) throw new Error("Invalid stored discussion identity");
+        const topicUrl = exactTopicUrl(post.topic_url, config.serverUrl);
+        return json(response, 200, { topic_id: post.topic_id, topic_url: topicUrl, forum_origin: config.serverUrl });
+      }
       if (request.method === "GET" && url.pathname === "/health") return json(response, 200, { status: "ok" });
       return json(response, 404, { error: "not_found" });
     } catch (error) {
@@ -81,4 +98,4 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
   });
 }
 
-export { validGhostSignature };
+export { exactGhostSource, validGhostSignature };
