@@ -23,6 +23,11 @@ runs as a small loopback-only Node service beside Ghost.
   adapter's nonsecret comments endpoint, then starts Discourse's standard
   comments embed with the already-recorded topic ID. No credential or topic
   identity is placed in Ghost content.
+  `data-discussionbridge-comments="full"` selects standard plugin-free
+  comments. `data-discussionbridge-comments="fullInteractive"` selects the
+  receiving plugin's full-app reader experience with dynamic Core-owned
+  height. An empty attribute remains the backwards-compatible `full` mode;
+  every other value fails closed.
 
 Bridge and webhook secrets live in root-protected files. They are never
 accepted through public JSON, returned in responses, or written to the state
@@ -57,7 +62,7 @@ The Ghost post contains an HTML card such as:
 A To Discourse post can render its mapped replies with:
 
 ```html
-<div data-discussionbridge-comments></div>
+<div data-discussionbridge-comments="fullInteractive"></div>
 <script defer src="/discussionbridge/assets/loader.js"></script>
 ```
 

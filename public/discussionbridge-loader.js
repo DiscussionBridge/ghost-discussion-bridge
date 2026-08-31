@@ -9,6 +9,11 @@
   }
 
   for (const target of document.querySelectorAll("[data-discussionbridge-comments]")) {
+    const mode = target.getAttribute("data-discussionbridge-comments") || "full";
+    if (!new Set(["full", "fullInteractive"]).has(mode)) {
+      target.textContent = "Discussion is temporarily unavailable.";
+      continue;
+    }
     const source = new URL(document.querySelector('link[rel="canonical"]')?.href || window.location.href);
     source.search = "";
     source.hash = "";
@@ -17,7 +22,11 @@
       .then((record) => {
         if (!Number.isSafeInteger(record.topic_id) || record.topic_id <= 0 || new URL(record.topic_url).origin !== record.forum_origin) throw new Error();
         target.id = "discourse-comments";
-        window.DiscourseEmbed = { discourseUrl: `${record.forum_origin}/`, topicId: record.topic_id };
+        window.DiscourseEmbed = {
+          discourseUrl: `${record.forum_origin}/`,
+          topicId: record.topic_id,
+          ...(mode === "fullInteractive" ? { fullApp: true, dynamicHeight: true } : {}),
+        };
         const script = document.createElement("script");
         script.async = true;
         script.src = `${record.forum_origin}/javascripts/embed.js`;
