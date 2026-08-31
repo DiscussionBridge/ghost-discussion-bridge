@@ -39,6 +39,19 @@ function renderInlineMath(root) {
   }
 }
 
+function renderCookedMath(root) {
+  for (const element of root.querySelectorAll(".math")) {
+    if (element.querySelector(".katex")) continue;
+    const source = element.textContent.trim();
+    if (!source) continue;
+    katex.render(source, element, {
+      displayMode: element.tagName === "DIV",
+      throwOnError: false,
+      strict: "warn",
+    });
+  }
+}
+
 async function renderRichContent(root) {
   if (!root) return;
   installStylesheet();
@@ -56,6 +69,7 @@ async function renderRichContent(root) {
     paragraph.replaceChildren();
     katex.render((match[1] ?? match[2]).trim(), paragraph, { displayMode: true, throwOnError: false, strict: "warn" });
   }
+  renderCookedMath(root);
   renderInlineMath(root);
   if (diagrams.length) await mermaid.run({ nodes: diagrams, suppressErrors: false });
 }

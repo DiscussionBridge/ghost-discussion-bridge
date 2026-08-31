@@ -23,7 +23,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.12");
+  assert.equal(record.adapter_version, "0.1.0-alpha.13");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -96,6 +96,9 @@ test("presentation is allowlisted and sanitized", async () => {
     const html = await response.text();
     assert.match(html, /Safe/);
     assert.doesNotMatch(html, /onclick|script/);
+    assert.match(html, /class="discussionbridge-presentation__source-link"/);
+    assert.match(html, />Open this discussion on The Bridge<\/a>/);
+    assert.doesNotMatch(html, />Continue the discussion<\/a>/);
   } finally { server.close(); }
 });
 
@@ -138,6 +141,8 @@ test("reader loader offers only standard and fullInteractive mapped comments", a
   assert.match(loader, /link\.href = record\.topic_url/);
   assert.match(loader, /mermaid\.run/);
   assert.match(loader, /katex\.render/);
+  assert.match(loader, /querySelectorAll\("\.math"\)/);
+  assert.match(loader, /displayMode: element\.tagName === "DIV"/);
   assert.match(loader, /\/discussionbridge\/assets\/loader\.css/);
   assert.doesNotMatch(loader, /connectionSecret|X-DiscussionBridge-Secret/);
 });

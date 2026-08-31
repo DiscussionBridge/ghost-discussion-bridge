@@ -78,7 +78,7 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
         const topicUrl = exactTopicUrl(record.topic_url, config.serverUrl);
         const cooked = sanitizeHtml(record.content_html, { allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]), allowedAttributes: { a: ["href", "title", "rel"], img: ["src", "alt", "title", "width", "height"], code: ["class"], pre: ["class"] }, allowedSchemes: ["https"], allowProtocolRelative: false });
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" });
-        return response.end(`<section class="discussionbridge-presentation">${cooked}<p><a href="${topicUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}" rel="noopener noreferrer">Continue the discussion</a></p></section>`);
+        return response.end(`<section class="discussionbridge-presentation">${cooked}<p class="discussionbridge-presentation__source-link"><a href="${topicUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}" rel="noopener noreferrer">Open this discussion on The Bridge</a></p></section>`);
       }
       if (request.method === "GET" && url.pathname === "/comments") {
         const sourceUrl = exactGhostSource(url.searchParams.get("source"), config.ghostOrigin);
