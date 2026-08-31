@@ -75,6 +75,7 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
         const responseRecord = await client.record(resourceId);
         const record = responseRecord?.bridge_record;
         if (!record || record.direction !== "from_discourse" || record.state !== "healthy" || record.resource_id !== resourceId || typeof record.content_html !== "string") throw new Error("Invalid presentation record");
+        if (!Number.isSafeInteger(record.topic_id) || record.topic_id <= 0) throw new Error("Invalid presentation topic identity");
         const topicUrl = exactTopicUrl(record.topic_url, config.serverUrl);
         const cooked = sanitizeHtml(record.content_html, {
           allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
@@ -98,8 +99,10 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
           },
           exclusiveFilter: (frame) => frame.attribs["data-discussionbridge-lightbox-meta"] === "true",
         });
+        const safeTopicUrl = topicUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+        const safeForumOrigin = config.serverUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" });
-        return response.end(`<section class="discussionbridge-presentation">${cooked}<p class="discussionbridge-presentation__source-link"><a href="${topicUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}" rel="noopener noreferrer">Open this discussion on The Bridge</a></p></section>`);
+        return response.end(`<section class="discussionbridge-presentation">${cooked}<div class="discussionbridge-comments-header"><h2>Discussion</h2><a href="${safeTopicUrl}" rel="nofollow noopener noreferrer">Open discussion</a></div><div data-discussionbridge-presentation-comments data-topic-id="${record.topic_id}" data-topic-url="${safeTopicUrl}" data-forum-origin="${safeForumOrigin}"></div></section>`);
       }
       if (request.method === "GET" && url.pathname === "/comments") {
         const sourceUrl = exactGhostSource(url.searchParams.get("source"), config.ghostOrigin);

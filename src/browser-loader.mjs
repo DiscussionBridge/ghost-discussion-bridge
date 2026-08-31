@@ -115,12 +115,66 @@ function installContents(root) {
   }
 }
 
+function installDiscussionStyles() {
+  if (!document.querySelector("style[data-discussionbridge-comments-style]")) {
+    const style = document.createElement("style");
+    style.setAttribute("data-discussionbridge-comments-style", "");
+    style.textContent = ".discussionbridge-comments-header{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-block:2rem 1rem}.discussionbridge-comments-header h2{margin:0}";
+    document.head.appendChild(style);
+  }
+}
+
+function installInteractiveDiscussion(target, record, addHeader = true) {
+  if (!target || !Number.isSafeInteger(record.topic_id) || record.topic_id <= 0) throw new Error("Invalid discussion identity");
+  const topicUrl = new URL(record.topic_url);
+  const forumOrigin = new URL(record.forum_origin);
+  if (topicUrl.origin !== forumOrigin.origin || forumOrigin.href !== `${forumOrigin.origin}/`) throw new Error("Invalid discussion origin");
+  if (addHeader) {
+    const header = document.createElement("div");
+    header.className = "discussionbridge-comments-header";
+    const heading = document.createElement("h2");
+    heading.textContent = "Discussion";
+    const link = document.createElement("a");
+    link.href = topicUrl.href;
+    link.textContent = "Open discussion";
+    link.rel = "nofollow noopener noreferrer";
+    header.append(heading, link);
+    target.before(header);
+  }
+  installDiscussionStyles();
+  target.id = "discourse-comments";
+  window.DiscourseEmbed = {
+    discourseUrl: forumOrigin.href,
+    topicId: record.topic_id,
+    fullApp: true,
+    embedHeight: "800px",
+    dynamicHeight: false,
+    embedMinHeight: "360",
+  };
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = `${forumOrigin.origin}/javascripts/embed.js`;
+  script.setAttribute("data-discussionbridge-comments-script", "");
+  document.head.appendChild(script);
+}
+
 for (const target of document.querySelectorAll("[data-discussionbridge-resource]")) {
   const resource = target.getAttribute("data-discussionbridge-resource");
   if (!/^[0-9a-f-]{36}$/i.test(resource || "")) continue;
   fetch(`/discussionbridge/presentation/${encodeURIComponent(resource)}`, { credentials: "same-origin", redirect: "error" })
     .then((response) => { if (!response.ok) throw new Error(); return response.text(); })
-    .then(async (html) => { target.innerHTML = html; await renderRichContent(target); installContents(target); })
+    .then(async (html) => {
+      target.innerHTML = html;
+      await renderRichContent(target);
+      installContents(target);
+      const discussion = target.querySelector("[data-discussionbridge-presentation-comments]");
+      if (!discussion) throw new Error();
+      installInteractiveDiscussion(discussion, {
+        topic_id: Number(discussion.getAttribute("data-topic-id")),
+        topic_url: discussion.getAttribute("data-topic-url"),
+        forum_origin: discussion.getAttribute("data-forum-origin"),
+      }, false);
+    })
     .catch(() => { target.textContent = "Discussion is temporarily unavailable."; });
 }
 
@@ -138,6 +192,10 @@ for (const target of document.querySelectorAll("[data-discussionbridge-comments]
   fetch(`/discussionbridge/comments?source=${encodeURIComponent(source.href)}`, { credentials: "same-origin", redirect: "error" })
     .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
     .then((record) => {
+      if (mode === "fullInteractive") {
+        installInteractiveDiscussion(target, record);
+        return;
+      }
       if (!Number.isSafeInteger(record.topic_id) || record.topic_id <= 0 || new URL(record.topic_url).origin !== record.forum_origin) throw new Error();
       const header = document.createElement("div");
       header.className = "discussionbridge-comments-header";
@@ -149,23 +207,9 @@ for (const target of document.querySelectorAll("[data-discussionbridge-comments]
       link.rel = "nofollow noopener noreferrer";
       header.append(heading, link);
       target.before(header);
-      if (!document.querySelector("style[data-discussionbridge-comments-style]")) {
-        const style = document.createElement("style");
-        style.setAttribute("data-discussionbridge-comments-style", "");
-        style.textContent = ".discussionbridge-comments-header{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-block-end:1rem}.discussionbridge-comments-header h2{margin:0}";
-        document.head.appendChild(style);
-      }
+      installDiscussionStyles();
       target.id = "discourse-comments";
-      window.DiscourseEmbed = {
-        discourseUrl: `${record.forum_origin}/`,
-        topicId: record.topic_id,
-        ...(mode === "fullInteractive" ? {
-          fullApp: true,
-          embedHeight: "800px",
-          dynamicHeight: false,
-          embedMinHeight: "360",
-        } : {}),
-      };
+      window.DiscourseEmbed = { discourseUrl: `${record.forum_origin}/`, topicId: record.topic_id };
       const script = document.createElement("script");
       script.async = true;
       script.src = `${record.forum_origin}/javascripts/embed.js`;

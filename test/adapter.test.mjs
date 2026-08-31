@@ -23,7 +23,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.15");
+  assert.equal(record.adapter_version, "0.1.0-alpha.16");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -86,7 +86,7 @@ test("presentation is allowlisted and sanitized", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
   await store.write({ version: 1, posts: {}, presentations: { "11111111-1111-4111-8111-111111111111": { registered_at: "now" } } });
-  const client = { record: async () => ({ bridge_record: { direction: "from_discourse", state: "healthy", resource_id: "11111111-1111-4111-8111-111111111111", content_html: '<p onclick="bad()">Safe</p><span class="math evil">E = mc^2</span><div class="math">x^2</div><div class="lightbox-wrapper"><a href="https://forum.example/image.svg"><img src="https://forum.example/image.svg" alt="Diagram"><div class="meta"><span>Diagram</span><span>960×320 1.71 KB</span></div></a></div><script>bad()</script>', topic_url: "https://forum.example/t/safe/1" } }) };
+  const client = { record: async () => ({ bridge_record: { direction: "from_discourse", state: "healthy", resource_id: "11111111-1111-4111-8111-111111111111", content_html: '<p onclick="bad()">Safe</p><span class="math evil">E = mc^2</span><div class="math">x^2</div><div class="lightbox-wrapper"><a href="https://forum.example/image.svg"><img src="https://forum.example/image.svg" alt="Diagram"><div class="meta"><span>Diagram</span><span>960×320 1.71 KB</span></div></a></div><script>bad()</script>', topic_id: 1, topic_url: "https://forum.example/t/safe/1" } }) };
   const server = buildServer(cfg, store, client);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
@@ -101,9 +101,11 @@ test("presentation is allowlisted and sanitized", async () => {
     assert.doesNotMatch(html, /class="[^"]*evil/);
     assert.match(html, /<img src="https:\/\/forum\.example\/image\.svg" alt="Diagram" \/>/);
     assert.doesNotMatch(html, /960×320 1\.71 KB/);
-    assert.match(html, /class="discussionbridge-presentation__source-link"/);
-    assert.match(html, />Open this discussion on The Bridge<\/a>/);
-    assert.doesNotMatch(html, />Continue the discussion<\/a>/);
+    assert.match(html, /<h2>Discussion<\/h2>/);
+    assert.match(html, />Open discussion<\/a>/);
+    assert.match(html, /data-discussionbridge-presentation-comments/);
+    assert.match(html, /data-topic-id="1"/);
+    assert.match(html, /data-topic-url="https:\/\/forum\.example\/t\/safe\/1"/);
   } finally { server.close(); }
 });
 
@@ -148,6 +150,9 @@ test("reader loader offers only standard and fullInteractive mapped comments", a
   assert.match(loader, /katex\.render/);
   assert.match(loader, /querySelectorAll\("\.math"\)/);
   assert.match(loader, /displayMode: element\.tagName === "DIV"/);
+  assert.match(loader, /data-discussionbridge-presentation-comments/);
+  assert.match(loader, /installInteractiveDiscussion\(discussion/);
+  assert.match(loader, /installInteractiveDiscussion\(target, record\)/);
   assert.match(loader, /\/discussionbridge\/assets\/loader\.css/);
   assert.doesNotMatch(loader, /connectionSecret|X-DiscussionBridge-Secret/);
 });

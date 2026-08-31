@@ -17,7 +17,11 @@ runs as a small loopback-only Node service beside Ghost.
   tab; source identities never acquire forum authority by themselves.
 - Explicitly registered From Discourse resources are pulled server-side and
   exposed through a same-origin Nginx route as sanitized HTML. The supplied
-  loader renders that HTML into an explicit Ghost post placeholder.
+  loader renders that HTML into an explicit Ghost post placeholder, then adds
+  the same topic's comments-only fullInteractive surface. The imported first
+  post remains the article and is not repeated in the discussion frame; its
+  replies, session and reply controls remain owned by Discourse. A validated
+  topic identity is required before either presentation is exposed.
 - Published Ghost posts can render their exact mapped Discourse discussion.
   The same-origin loader resolves the current canonical Ghost URL through the
   adapter's nonsecret comments endpoint, then starts Discourse's standard
