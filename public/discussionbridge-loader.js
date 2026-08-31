@@ -21,6 +21,22 @@
       .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
       .then((record) => {
         if (!Number.isSafeInteger(record.topic_id) || record.topic_id <= 0 || new URL(record.topic_url).origin !== record.forum_origin) throw new Error();
+        const header = document.createElement("div");
+        header.className = "discussionbridge-comments-header";
+        const heading = document.createElement("h2");
+        heading.textContent = "Discussion";
+        const link = document.createElement("a");
+        link.href = record.topic_url;
+        link.textContent = "Open discussion";
+        link.rel = "nofollow noopener noreferrer";
+        header.append(heading, link);
+        target.before(header);
+        if (!document.querySelector("style[data-discussionbridge-comments-style]")) {
+          const style = document.createElement("style");
+          style.setAttribute("data-discussionbridge-comments-style", "");
+          style.textContent = ".discussionbridge-comments-header{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-block-end:1rem}.discussionbridge-comments-header h2{margin:0}";
+          document.head.appendChild(style);
+        }
         target.id = "discourse-comments";
         window.DiscourseEmbed = {
           discourseUrl: `${record.forum_origin}/`,

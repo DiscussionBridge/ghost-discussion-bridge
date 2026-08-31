@@ -28,6 +28,9 @@ runs as a small loopback-only Node service beside Ghost.
   receiving plugin's full-app reader experience with dynamic Core-owned
   height. An empty attribute remains the backwards-compatible `full` mode;
   every other value fails closed.
+  The loader renders a native page-level `Discussion` heading and an
+  `Open discussion` link from the validated stored topic URL before the
+  comments surface.
 
 Bridge and webhook secrets live in root-protected files. They are never
 accepted through public JSON, returned in responses, or written to the state
