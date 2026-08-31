@@ -41,7 +41,12 @@
         window.DiscourseEmbed = {
           discourseUrl: `${record.forum_origin}/`,
           topicId: record.topic_id,
-          ...(mode === "fullInteractive" ? { fullApp: true, dynamicHeight: true } : {}),
+          ...(mode === "fullInteractive" ? {
+            fullApp: true,
+            embedHeight: "800px",
+            dynamicHeight: true,
+            embedMinHeight: "360",
+          } : {}),
         };
         const script = document.createElement("script");
         script.async = true;

@@ -26,8 +26,11 @@ runs as a small loopback-only Node service beside Ghost.
   `data-discussionbridge-comments="full"` selects standard plugin-free
   comments. `data-discussionbridge-comments="fullInteractive"` selects the
   receiving plugin's full-app reader experience with dynamic Core-owned
-  height. An empty attribute remains the backwards-compatible `full` mode;
-  every other value fails closed.
+  height. The initial 800px frame and 360px minimum are explicit
+  DiscussionBridge defaults shared with the Astro adapter; Ghost does not
+  inherit Discourse's otherwise implicit 600px embed default. An empty
+  attribute remains the backwards-compatible `full` mode; every other value
+  fails closed.
   The loader renders a native page-level `Discussion` heading and an
   `Open discussion` link from the validated stored topic URL before the
   comments surface.

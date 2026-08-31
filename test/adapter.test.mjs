@@ -23,7 +23,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.7");
+  assert.equal(record.adapter_version, "0.1.0-alpha.8");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -125,7 +125,10 @@ test("Ghost comment source is exact-origin and canonical", () => {
 test("reader loader offers only standard and fullInteractive mapped comments", async () => {
   const loader = await readFile(new URL("../public/discussionbridge-loader.js", import.meta.url), "utf8");
   assert.match(loader, /\["full", "fullInteractive"\]/);
-  assert.match(loader, /mode === "fullInteractive" \? \{ fullApp: true, dynamicHeight: true \}/);
+  assert.match(loader, /fullApp: true/);
+  assert.match(loader, /embedHeight: "800px"/);
+  assert.match(loader, /dynamicHeight: true/);
+  assert.match(loader, /embedMinHeight: "360"/);
   assert.match(loader, /topicId: record\.topic_id/);
   assert.match(loader, /heading\.textContent = "Discussion"/);
   assert.match(loader, /link\.textContent = "Open discussion"/);
