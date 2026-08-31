@@ -85,7 +85,9 @@ A To Discourse post can render its mapped replies with:
 <script defer src="/discussionbridge/assets/loader.js"></script>
 ```
 
-Managed Ghost hosts do not need to expose shell access to each publisher. They
-can operate the sidecar, protected credentials, persistent state and narrow
-reverse-proxy routes as a supported integration. See
+Managed Ghost hosts do not need to expose shell access to each publisher. The
+provider installs and operates the companion adapter service on the Ghost
+server, together with its protected credentials, persistent state and narrow
+reverse-proxy routes. Ghost Admin configures the native custom integration; it
+does not install the companion service. See
 [`docs/MANAGED_HOSTING.md`](docs/MANAGED_HOSTING.md) for the exact boundary.
