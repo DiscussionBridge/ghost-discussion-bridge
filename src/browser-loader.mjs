@@ -124,7 +124,7 @@ function installDiscussionStyles() {
   }
 }
 
-function installInteractiveDiscussion(target, record, addHeader = true) {
+function installInteractiveDiscussion(target, record, addHeader = true, sourcePresentation = false) {
   if (!target || !Number.isSafeInteger(record.topic_id) || record.topic_id <= 0) throw new Error("Invalid discussion identity");
   const topicUrl = new URL(record.topic_url);
   const forumOrigin = new URL(record.forum_origin);
@@ -150,6 +150,7 @@ function installInteractiveDiscussion(target, record, addHeader = true) {
     embedHeight: "800px",
     dynamicHeight: false,
     embedMinHeight: "360",
+    ...(sourcePresentation ? { className: "discussion-bridge-source-presentation" } : {}),
   };
   const script = document.createElement("script");
   script.async = true;
@@ -173,7 +174,7 @@ for (const target of document.querySelectorAll("[data-discussionbridge-resource]
         topic_id: Number(discussion.getAttribute("data-topic-id")),
         topic_url: discussion.getAttribute("data-topic-url"),
         forum_origin: discussion.getAttribute("data-forum-origin"),
-      }, false);
+      }, false, true);
     })
     .catch(() => { target.textContent = "Discussion is temporarily unavailable."; });
 }

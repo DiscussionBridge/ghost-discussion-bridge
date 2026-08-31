@@ -23,7 +23,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.16");
+  assert.equal(record.adapter_version, "0.1.0-alpha.17");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -152,6 +152,8 @@ test("reader loader offers only standard and fullInteractive mapped comments", a
   assert.match(loader, /displayMode: element\.tagName === "DIV"/);
   assert.match(loader, /data-discussionbridge-presentation-comments/);
   assert.match(loader, /installInteractiveDiscussion\(discussion/);
+  assert.match(loader, /false, true\)/);
+  assert.match(loader, /className: "discussion-bridge-source-presentation"/);
   assert.match(loader, /installInteractiveDiscussion\(target, record\)/);
   assert.match(loader, /\/discussionbridge\/assets\/loader\.css/);
   assert.doesNotMatch(loader, /connectionSecret|X-DiscussionBridge-Secret/);
