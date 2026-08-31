@@ -40,6 +40,9 @@ runs as a small loopback-only Node service beside Ghost.
   more `h2`/`h3` headings. For To Discourse articles it uses the native Ghost
   article headings; for From Discourse pages it waits for the sanitized forum
   content and builds the same navigation from that content.
+- The same locally bundled loader renders Mermaid diagrams and inline or block
+  math in both directions. No browser request to a third-party renderer or CDN
+  is required; the companion stylesheet and font data ship with the adapter.
 
 Bridge and webhook secrets live in root-protected files. They are never
 accepted through public JSON, returned in responses, or written to the state

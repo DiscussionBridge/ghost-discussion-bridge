@@ -1,15 +1,21 @@
 {
   "name": "ghost-discussion-bridge",
-  "version": "0.1.0-alpha.10",
+  "version": "0.1.0-alpha.11",
   "private": true,
   "type": "module",
   "scripts": {
+    "build:browser": "node scripts/build-browser.mjs",
     "start": "node src/index.mjs",
-    "test": "node --test",
-    "check": "node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/state-store.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check public/discussionbridge-loader.js"
+    "test": "node --test test/*.test.mjs",
+    "check": "npm run build:browser && node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/state-store.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check src/browser-loader.mjs && node --check public/discussionbridge-loader.js"
   },
   "dependencies": {
+    "katex": "0.18.0",
+    "mermaid": "11.17.2",
     "sanitize-html": "2.17.7"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
   },
   "engines": {
     "node": ">=22"
