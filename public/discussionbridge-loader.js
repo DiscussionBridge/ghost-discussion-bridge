@@ -44,7 +44,7 @@
           ...(mode === "fullInteractive" ? {
             fullApp: true,
             embedHeight: "800px",
-            dynamicHeight: true,
+            dynamicHeight: false,
             embedMinHeight: "360",
           } : {}),
         };
