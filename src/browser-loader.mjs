@@ -22,7 +22,7 @@ function renderInlineMath(root) {
   }
   for (const node of candidates) {
     const source = node.textContent;
-    const pattern = /\[math\]([\s\S]*?)\[\/math\]/gu;
+    const pattern = /\[math\]([\s\S]*?)\[\/math\]|\$([^$\n]+?)\$/gu;
     if (!pattern.test(source)) continue;
     pattern.lastIndex = 0;
     const fragment = document.createDocumentFragment();
@@ -30,7 +30,7 @@ function renderInlineMath(root) {
     for (const match of source.matchAll(pattern)) {
       fragment.append(source.slice(offset, match.index));
       const span = document.createElement("span");
-      katex.render(match[1].trim(), span, { throwOnError: false, strict: "warn" });
+      katex.render((match[1] ?? match[2]).trim(), span, { throwOnError: false, strict: "warn" });
       fragment.append(span);
       offset = match.index + match[0].length;
     }
@@ -51,10 +51,10 @@ async function renderRichContent(root) {
     diagrams.push(diagram);
   }
   for (const paragraph of root.querySelectorAll("p")) {
-    const match = /^\s*\[math\]([\s\S]*?)\[\/math\]\s*$/u.exec(paragraph.textContent);
+    const match = /^\s*(?:\[math\]([\s\S]*?)\[\/math\]|\$\$([\s\S]*?)\$\$)\s*$/u.exec(paragraph.textContent);
     if (!match) continue;
     paragraph.replaceChildren();
-    katex.render(match[1].trim(), paragraph, { displayMode: true, throwOnError: false, strict: "warn" });
+    katex.render((match[1] ?? match[2]).trim(), paragraph, { displayMode: true, throwOnError: false, strict: "warn" });
   }
   renderInlineMath(root);
   if (diagrams.length) await mermaid.run({ nodes: diagrams, suppressErrors: false });
