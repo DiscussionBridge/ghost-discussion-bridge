@@ -23,7 +23,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.9");
+  assert.equal(record.adapter_version, "0.1.0-alpha.10");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -129,6 +129,9 @@ test("reader loader offers only standard and fullInteractive mapped comments", a
   assert.match(loader, /embedHeight: "800px"/);
   assert.match(loader, /dynamicHeight: false/);
   assert.match(loader, /embedMinHeight: "360"/);
+  assert.match(loader, /aria-label", "On this page"/);
+  assert.match(loader, /installContents\(target\)/);
+  assert.match(loader, /installContents\(document\.querySelector\("\.gh-content"\)\)/);
   assert.match(loader, /topicId: record\.topic_id/);
   assert.match(loader, /heading\.textContent = "Discussion"/);
   assert.match(loader, /link\.textContent = "Open discussion"/);

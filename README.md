@@ -36,6 +36,10 @@ runs as a small loopback-only Node service beside Ghost.
   The loader renders a native page-level `Discussion` heading and an
   `Open discussion` link from the validated stored topic URL before the
   comments surface.
+- The credential-free loader builds an **On this page** navigation from two or
+  more `h2`/`h3` headings. For To Discourse articles it uses the native Ghost
+  article headings; for From Discourse pages it waits for the sanitized forum
+  content and builds the same navigation from that content.
 
 Bridge and webhook secrets live in root-protected files. They are never
 accepted through public JSON, returned in responses, or written to the state
