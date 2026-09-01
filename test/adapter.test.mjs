@@ -248,6 +248,8 @@ test("simple comments fetch bounded missing batches and disclose replies after f
   assert.match(html, /Safe final reply/);
   assert.match(html, /Powered by Discourse/);
   assert.match(html, /discussionbridge-powered-by__wordmark/);
+  assert.match(html, /<span class="discussionbridge-credit__prefix">Connected by<\/span>/);
+  assert.match(html, /class="discussionbridge-credit__brand" href="https:\/\/discussionbridge\.dev\/"/);
   assert.doesNotMatch(html, /<script>|bad\(\)/);
   assert.doesNotMatch(html, /Reply 1/);
 });

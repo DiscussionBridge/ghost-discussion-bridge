@@ -82,6 +82,11 @@ Only posts carrying Ghost's internal `#discussionbridge` tag are eligible.
 Configure only the `post.published` event; ordinary published edits are not an
 implemented synchronization surface.
 
+Simple mode presents the forum-controlled official Discourse attribution and
+the independent **Connected by DiscussionBridge** credit as separate lines.
+The latter remains present regardless of the forum-wide Discourse branding
+setting.
+
 Register a From Discourse resource without exposing credentials:
 
 ```text
