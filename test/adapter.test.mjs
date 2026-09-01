@@ -13,8 +13,12 @@ import { StateStore } from "../src/state-store.mjs";
 import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignature } from "../src/service.mjs";
 
 test("rich-content code injection is additive and idempotent", () => {
-  const script = '<script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.22" defer></script>';
-  assert.equal(mergeCodeInjection(null), script);
+  const script = mergeCodeInjection(null);
+  assert.match(script, /data-discussionbridge-comments-bootstrap/);
+  assert.match(script, /let host = document\.querySelector\("\.gh-comments"\)/);
+  assert.match(script, /host = document\.createElement\("section"\)/);
+  assert.match(script, /discussionbridge-comments-host/);
+  assert.match(script, /0\.1\.0-alpha\.22/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);

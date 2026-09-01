@@ -2,12 +2,37 @@ import { loadConfig } from "./config.mjs";
 import { GhostAdminClient } from "./ghost-admin-client.mjs";
 import { pathToFileURL } from "node:url";
 
-const SCRIPT = '<script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.22" defer></script>';
+const COMMENTS_BOOTSTRAP = `<script data-discussionbridge-comments-bootstrap>
+(() => {
+  if (!document.body.classList.contains("tag-hash-discussionbridge")) return;
+  let host = document.querySelector(".gh-comments");
+  if (!host) {
+    const article = document.querySelector(".gh-article");
+    if (!article) return;
+    host = document.createElement("section");
+    host.className = "gh-comments discussionbridge-comments-host gh-canvas";
+    article.appendChild(host);
+  }
+  host.replaceChildren();
+  const mode = document.body.classList.contains("tag-hash-discussionbridge-simple")
+    ? "simple"
+    : document.body.classList.contains("tag-hash-discussionbridge-full")
+      ? "full"
+      : "fullInteractive";
+  const target = document.createElement("div");
+  target.setAttribute("data-discussionbridge-comments", mode);
+  host.appendChild(target);
+  const loader = document.createElement("script");
+  loader.src = "/discussionbridge/assets/loader.js?v=0.1.0-alpha.22";
+  loader.defer = true;
+  host.appendChild(loader);
+})();
+</script>`;
 
 export function mergeCodeInjection(value) {
   if (value !== null && value !== undefined && typeof value !== "string") throw new Error("Invalid Ghost code injection setting");
   const current = (value ?? "").trim();
-  return current.includes(SCRIPT) ? current : [current, SCRIPT].filter(Boolean).join("\n");
+  return current.includes("data-discussionbridge-comments-bootstrap") ? current : [current, COMMENTS_BOOTSTRAP].filter(Boolean).join("\n");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
