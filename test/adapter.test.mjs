@@ -25,6 +25,18 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
 });
 
+test("demo page navigation adds Read more without duplicating the stock section", async () => {
+  const navigation = await readFile(new URL("../demo/ghost-demo-navigation.js", import.meta.url), "utf8");
+  assert.match(navigation, /page-template/);
+  assert.match(navigation, /heading\.textContent\?\.trim\(\) === "Read more"/);
+  assert.match(navigation, /data-discussionbridge-read-more/);
+  assert.match(navigation, /\.gh-footer/);
+  assert.match(navigation, /\/from-the-bridge\//);
+  assert.match(navigation, /\/ghost-simple-comments\//);
+  assert.match(navigation, /\/ghost-full-comments\//);
+  assert.match(navigation, /\/the-bridge-publishes-everywhere\//);
+});
+
 async function config() {
   const root = await mkdtemp(join(tmpdir(), "ghost-discussionbridge-"));
   await writeFile(join(root, "secret"), "s".repeat(32));
