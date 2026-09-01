@@ -153,8 +153,9 @@ test("reader loader offers simple, standard, and fullInteractive mapped comments
   assert.match(loader, /dynamicHeight: false/);
   assert.match(loader, /embedMinHeight: "360"/);
   assert.match(loader, /aria-label", "On this page"/);
+  assert.match(loader, /const nativeArticle = document\.querySelector\("\.gh-content"\)/);
   assert.match(loader, /installContents\(target\)/);
-  assert.match(loader, /installContents\(article\)/);
+  assert.match(loader, /installContents\(nativeArticle\)/);
   assert.match(loader, /topicId: record\.topic_id/);
   assert.match(loader, /heading\.textContent = "Discussion"/);
   assert.match(loader, /link\.textContent = "Open discussion"/);

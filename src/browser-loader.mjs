@@ -159,6 +159,9 @@ function installInteractiveDiscussion(target, record, addHeader = true, sourcePr
   document.head.appendChild(script);
 }
 
+const nativeArticle = document.querySelector(".gh-content");
+if (nativeArticle) renderRichContent(nativeArticle).then(() => installContents(nativeArticle));
+
 for (const target of document.querySelectorAll("[data-discussionbridge-resource]")) {
   const resource = target.getAttribute("data-discussionbridge-resource");
   if (!/^[0-9a-f-]{36}$/i.test(resource || "")) continue;
@@ -186,8 +189,6 @@ for (const target of document.querySelectorAll("[data-discussionbridge-comments]
     continue;
   }
   const source = new URL(document.querySelector('link[rel="canonical"]')?.href || window.location.href);
-  const article = document.querySelector(".gh-content");
-  renderRichContent(article).then(() => installContents(article));
   source.search = "";
   source.hash = "";
   if (mode === "simple") {
