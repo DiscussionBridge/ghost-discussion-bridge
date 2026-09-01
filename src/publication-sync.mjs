@@ -36,7 +36,7 @@ export function nativePublication(record, config) {
 }
 
 export async function syncPublications(config, store, bridge, ghost) {
-  const summary = { created: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0 };
+  const summary = { created: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0, errors: [] };
   const candidates = [];
   let page = 1;
   for (;;) {
@@ -49,7 +49,7 @@ export async function syncPublications(config, store, bridge, ghost) {
   await store.update(async (state) => {
     for (const record of candidates) {
       let publication;
-      try { publication = nativePublication(record, config); } catch { summary.failed += 1; continue; }
+      try { publication = nativePublication(record, config); } catch (error) { summary.failed += 1; summary.errors.push({ resource_id: UUID.test(record?.resource_id ?? "") ? record.resource_id : null, reason: error.message }); continue; }
       if (!publication) { summary.skipped += 1; continue; }
       const prior = state.publications[publication.resourceId];
       if (prior?.revision === publication.revision && prior?.canonical_url === publication.destination) { summary.unchanged += 1; continue; }
@@ -65,7 +65,7 @@ export async function syncPublications(config, store, bridge, ghost) {
         if (!result || !/^[a-f0-9]{24}$/iu.test(result.id ?? "") || result.slug !== publication.slug || result.url !== publication.destination) throw new Error("Invalid Ghost publication result");
         state.publications[publication.resourceId] = { ghost_post_id: result.id, canonical_url: publication.destination, revision: publication.revision, topic_id: publication.topicId, topic_url: publication.topicUrl, synchronized_at: new Date().toISOString() };
         summary[prior ? "updated" : "created"] += 1;
-      } catch { summary.failed += 1; }
+      } catch (error) { summary.failed += 1; summary.errors.push({ resource_id: publication.resourceId, reason: error.message }); }
     }
   });
   return summary;

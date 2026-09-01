@@ -236,8 +236,8 @@ test("publication sync creates once, skips presentation records and exact retry 
   const bridge = { records: async () => ({ bridge_records: records, pagination: { page: 1, pages: 1 } }) };
   const created = [];
   const ghost = { create: async (post) => { created.push(post); return { id: "a".repeat(24), slug: post.slug, url: `https://ghost.example/${post.slug}/` }; } };
-  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 1, updated: 0, unchanged: 0, skipped: 1, failed: 0 });
-  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 0, updated: 0, unchanged: 1, skipped: 1, failed: 0 });
+  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 1, updated: 0, unchanged: 0, skipped: 1, failed: 0, errors: [] });
+  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 0, updated: 0, unchanged: 1, skipped: 1, failed: 0, errors: [] });
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
