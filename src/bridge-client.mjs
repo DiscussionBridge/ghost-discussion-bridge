@@ -65,7 +65,22 @@ export class BridgeClient {
     return this.request("GET", `/discussion-bridge/v1/bridge-records/${encodeURIComponent(resourceId)}.json`);
   }
 
-  async request(method, path, payload) {
+  async publicTopic(topicId) {
+    if (!Number.isSafeInteger(topicId) || topicId <= 0) throw new Error("Invalid topic ID");
+    return this.request("GET", `/t/${topicId}.json`, undefined, false);
+  }
+
+  async publicTopicPosts(topicId, postIds) {
+    if (!Number.isSafeInteger(topicId) || topicId <= 0 || !Array.isArray(postIds) || postIds.length < 1 || postIds.length > 20) {
+      throw new Error("Invalid topic post request");
+    }
+    if (postIds.some((postId) => !Number.isSafeInteger(postId) || postId <= 0)) throw new Error("Invalid topic post request");
+    const query = new URLSearchParams();
+    for (const postId of new Set(postIds)) query.append("post_ids[]", String(postId));
+    return this.request("GET", `/t/${topicId}/posts.json?${query}`, undefined, false);
+  }
+
+  async request(method, path, payload, authenticate = true) {
     const body = payload === undefined ? undefined : JSON.stringify(payload);
     if (body && Buffer.byteLength(body) > MAX_BYTES) throw new Error("Request too large");
     const controller = new AbortController();
@@ -79,8 +94,10 @@ export class BridgeClient {
         headers: {
           Accept: "application/json",
           ...(body ? { "Content-Type": "application/json" } : {}),
-          "X-DiscussionBridge-Connection": this.config.connectionId,
-          "X-DiscussionBridge-Secret": this.config.connectionSecret,
+          ...(authenticate ? {
+            "X-DiscussionBridge-Connection": this.config.connectionId,
+            "X-DiscussionBridge-Secret": this.config.connectionSecret,
+          } : {}),
         },
         body,
       });
@@ -131,7 +148,7 @@ export function ghostRecord(payload, config, correlationId) {
     published: true,
     visibility: "unlisted",
     adapter_id: "ghost-discussion-bridge",
-    adapter_version: "0.1.0-alpha.17",
+    adapter_version: "0.1.0-alpha.18",
     correlation_id: correlationId,
     ...authorship,
     ...(config.lane ? { lane: config.lane } : {}),

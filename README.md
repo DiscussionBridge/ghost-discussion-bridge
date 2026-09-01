@@ -28,7 +28,10 @@ runs as a small loopback-only Node service beside Ghost.
   comments embed with the already-recorded topic ID. No credential or topic
   identity is placed in Ghost content.
   `data-discussionbridge-comments="full"` selects standard plugin-free
-  comments. `data-discussionbridge-comments="fullInteractive"` selects the
+  comments. `data-discussionbridge-comments="simple"` selects native bounded
+  reply cards with an initial five comments, a **Show more comments** disclosure,
+  and a hard 50-reply ceiling before continuing on The Bridge.
+  `data-discussionbridge-comments="fullInteractive"` selects the
   receiving plugin's full-app reader experience in a bounded application
   viewport. The 800px frame and 360px minimum are explicit DiscussionBridge
   defaults shared with the Astro adapter; `dynamicHeight` is disabled so long

@@ -4,6 +4,8 @@ import sanitizeHtml from "sanitize-html";
 import { BridgeClient, ghostRecord } from "./bridge-client.mjs";
 
 const MAX_WEBHOOK_BYTES = 131_072;
+const INITIAL_SIMPLE_REPLIES = 5;
+const MAX_SIMPLE_REPLIES = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function validGhostSignature(header, rawBody, secret, now = Date.now()) {
@@ -45,6 +47,62 @@ function exactGhostSource(value, ghostOrigin) {
   const parsed = new URL(value);
   if (parsed.origin !== ghostOrigin || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error("Invalid Ghost source URL");
   return parsed.href;
+}
+
+function escapeHtml(value) {
+  return String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function sanitizeReply(html) {
+  return sanitizeHtml(html, {
+    allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
+    allowedAttributes: {
+      a: ["href", "title", "rel"], img: ["src", "alt", "title", "width", "height"],
+      code: ["class"], pre: ["class"], span: ["class"], div: ["class"],
+    },
+    allowedSchemes: ["https"],
+    allowProtocolRelative: false,
+  });
+}
+
+async function renderSimpleDiscussion(client, topicId, forumOrigin) {
+  const topic = await client.publicTopic(topicId);
+  const postStream = topic?.post_stream;
+  if (!postStream || !Array.isArray(postStream.posts) || !Array.isArray(postStream.stream)) throw new Error("Invalid topic response");
+  const targetIds = postStream.stream.slice(1, MAX_SIMPLE_REPLIES);
+  if (targetIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) throw new Error("Invalid topic response");
+  const postsById = new Map(postStream.posts.filter((post) => Number.isSafeInteger(post?.id) && post.id > 0).map((post) => [post.id, post]));
+  const missing = targetIds.filter((id) => !postsById.has(id));
+  for (let index = 0; index < missing.length; index += 20) {
+    const additional = await client.publicTopicPosts(topicId, missing.slice(index, index + 20));
+    if (!Array.isArray(additional?.post_stream?.posts)) throw new Error("Invalid topic response");
+    for (const post of additional.post_stream.posts) {
+      if (!Number.isSafeInteger(post?.id) || post.id <= 0) throw new Error("Invalid topic response");
+      postsById.set(post.id, post);
+    }
+  }
+  const slug = typeof topic.slug === "string" && /^[a-z0-9-]+$/u.test(topic.slug) ? topic.slug : "topic";
+  const topicUrl = `${forumOrigin}/t/${slug}/${topicId}`;
+  const replies = targetIds.map((id) => {
+    const post = postsById.get(id);
+    if (!post || !Number.isSafeInteger(post.post_number) || post.post_number < 2 || typeof post.username !== "string" || !post.username.trim() || post.username.length > 100 || typeof post.cooked !== "string" || typeof post.created_at !== "string") throw new Error("Invalid topic response");
+    const created = new Date(post.created_at);
+    if (!Number.isFinite(created.valueOf())) throw new Error("Invalid topic response");
+    const body = sanitizeReply(post.cooked);
+    if (!body) return "";
+    const name = typeof post.name === "string" && post.name.trim() ? post.name.trim() : post.username.trim();
+    const template = typeof post.avatar_template === "string" && post.avatar_template.startsWith("/") && !post.avatar_template.startsWith("//") && post.avatar_template.length <= 500
+      ? post.avatar_template.replace("{size}", "48") : null;
+    const avatar = template
+      ? `<span class="discussionbridge-simple__avatar" aria-hidden="true"><img src="${escapeHtml(forumOrigin + template)}" alt="" width="48" height="48" loading="lazy"></span>`
+      : `<span class="discussionbridge-simple__avatar discussionbridge-simple__avatar--fallback" aria-hidden="true">${escapeHtml(post.username.trim().slice(0, 1).toUpperCase())}</span>`;
+    return `<article class="discussionbridge-simple__reply">${avatar}<div class="discussionbridge-simple__content"><header class="discussionbridge-simple__meta"><strong>${escapeHtml(name)}</strong><a href="${escapeHtml(`${topicUrl}/${post.post_number}`)}" rel="nofollow noopener noreferrer"><time datetime="${escapeHtml(created.toISOString())}">${escapeHtml(created.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }))}</time></a></header><div class="discussionbridge-simple__body">${body}</div></div></article>`;
+  }).filter(Boolean);
+  let content = replies.length ? replies.slice(0, INITIAL_SIMPLE_REPLIES).join("") : '<p class="discussionbridge-simple__empty">No replies yet.</p>';
+  const remaining = replies.slice(INITIAL_SIMPLE_REPLIES);
+  if (remaining.length) content += `<details class="discussionbridge-simple__more"><summary><span class="discussionbridge-simple__more-closed">Show ${remaining.length} more ${remaining.length === 1 ? "comment" : "comments"}</span><span class="discussionbridge-simple__more-open">Show fewer comments</span></summary>${remaining.join("")}</details>`;
+  if (postStream.stream.length - 1 > MAX_SIMPLE_REPLIES) content += `<p class="discussionbridge-simple__limit">Showing the first ${MAX_SIMPLE_REPLIES} replies. <a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer">View the complete discussion on The Bridge</a>.</p>`;
+  return `<section class="discussionbridge-simple"><div class="discussionbridge-comments-header"><h2>Comments</h2><a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer">Open discussion</a></div>${content}</section>`;
 }
 
 export function buildServer(config, store, client = new BridgeClient(config)) {
@@ -114,6 +172,18 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
         const topicUrl = exactTopicUrl(post.topic_url, config.serverUrl);
         return json(response, 200, { topic_id: post.topic_id, topic_url: topicUrl, forum_origin: config.serverUrl });
       }
+      if (request.method === "GET" && url.pathname === "/simple") {
+        const sourceUrl = exactGhostSource(url.searchParams.get("source"), config.ghostOrigin);
+        const state = await store.read();
+        const matches = Object.values(state.posts).filter((post) => post?.canonical_url === sourceUrl);
+        if (matches.length !== 1) return json(response, 404, { error: "not_found" });
+        const post = matches[0];
+        if (!Number.isSafeInteger(post.topic_id) || post.topic_id <= 0) throw new Error("Invalid stored discussion identity");
+        exactTopicUrl(post.topic_url, config.serverUrl);
+        const html = await renderSimpleDiscussion(client, post.topic_id, config.serverUrl);
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" });
+        return response.end(html);
+      }
       if (request.method === "GET" && url.pathname === "/health") return json(response, 200, { status: "ok" });
       return json(response, 404, { error: "not_found" });
     } catch (error) {
@@ -122,4 +192,4 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
   });
 }
 
-export { exactGhostSource, validGhostSignature };
+export { exactGhostSource, renderSimpleDiscussion, validGhostSignature };

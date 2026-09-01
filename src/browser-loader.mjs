@@ -119,7 +119,7 @@ function installDiscussionStyles() {
   if (!document.querySelector("style[data-discussionbridge-comments-style]")) {
     const style = document.createElement("style");
     style.setAttribute("data-discussionbridge-comments-style", "");
-    style.textContent = ".discussionbridge-comments-header{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-block:2rem 1rem}.discussionbridge-comments-header h2{margin:0}";
+    style.textContent = ".discussionbridge-comments-header{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-block:2rem 1rem}.discussionbridge-comments-header h2{margin:0}.discussionbridge-simple__reply{display:grid;grid-template-columns:2.75rem minmax(0,1fr);gap:1rem;padding:1rem 0;border-top:1px solid color-mix(in srgb,currentColor 14%,transparent)}.discussionbridge-simple__avatar{display:grid;width:2.75rem;height:2.75rem;overflow:hidden;place-items:center;border-radius:50%;background:color-mix(in srgb,currentColor 10%,transparent);font-weight:750}.discussionbridge-simple__avatar img{width:100%;height:100%;object-fit:cover}.discussionbridge-simple__content{min-width:0}.discussionbridge-simple__meta{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin:0 0 .65rem;font-size:.875rem}.discussionbridge-simple__more summary{width:max-content;max-width:100%;margin:1rem auto;padding:.55rem .9rem;border:1px solid color-mix(in srgb,currentColor 24%,transparent);border-radius:999px;cursor:pointer;font-weight:700}.discussionbridge-simple__more-open{display:none}.discussionbridge-simple__more[open] .discussionbridge-simple__more-closed{display:none}.discussionbridge-simple__more[open] .discussionbridge-simple__more-open{display:inline}.discussionbridge-simple__limit{text-align:center;font-size:.9rem}@media(max-width:520px){.discussionbridge-comments-header,.discussionbridge-simple__meta{align-items:flex-start;flex-direction:column}}";
     document.head.appendChild(style);
   }
 }
@@ -181,7 +181,7 @@ for (const target of document.querySelectorAll("[data-discussionbridge-resource]
 
 for (const target of document.querySelectorAll("[data-discussionbridge-comments]")) {
   const mode = target.getAttribute("data-discussionbridge-comments") || "full";
-  if (!new Set(["full", "fullInteractive"]).has(mode)) {
+  if (!new Set(["simple", "full", "fullInteractive"]).has(mode)) {
     target.textContent = "Discussion is temporarily unavailable.";
     continue;
   }
@@ -190,6 +190,14 @@ for (const target of document.querySelectorAll("[data-discussionbridge-comments]
   renderRichContent(article).then(() => installContents(article));
   source.search = "";
   source.hash = "";
+  if (mode === "simple") {
+    installDiscussionStyles();
+    fetch(`/discussionbridge/simple?source=${encodeURIComponent(source.href)}`, { credentials: "same-origin", redirect: "error" })
+      .then((response) => { if (!response.ok) throw new Error(); return response.text(); })
+      .then((html) => { target.innerHTML = html; return renderRichContent(target); })
+      .catch(() => { target.textContent = "Discussion is temporarily unavailable."; });
+    continue;
+  }
   fetch(`/discussionbridge/comments?source=${encodeURIComponent(source.href)}`, { credentials: "same-origin", redirect: "error" })
     .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
     .then((record) => {

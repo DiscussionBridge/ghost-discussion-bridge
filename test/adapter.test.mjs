@@ -7,7 +7,7 @@ import test from "node:test";
 import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
 import { StateStore } from "../src/state-store.mjs";
-import { buildServer, exactGhostSource, validGhostSignature } from "../src/service.mjs";
+import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignature } from "../src/service.mjs";
 
 async function config() {
   const root = await mkdtemp(join(tmpdir(), "ghost-discussionbridge-"));
@@ -23,7 +23,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.17");
+  assert.equal(record.adapter_version, "0.1.0-alpha.18");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -132,9 +132,10 @@ test("Ghost comment source is exact-origin and canonical", () => {
   assert.throws(() => exactGhostSource("https://ghost.example/article/#comments", "https://ghost.example"));
 });
 
-test("reader loader offers only standard and fullInteractive mapped comments", async () => {
+test("reader loader offers simple, standard, and fullInteractive mapped comments", async () => {
   const loader = await readFile(new URL("../src/browser-loader.mjs", import.meta.url), "utf8");
-  assert.match(loader, /\["full", "fullInteractive"\]/);
+  assert.match(loader, /\["simple", "full", "fullInteractive"\]/);
+  assert.match(loader, /\/discussionbridge\/simple\?source=/);
   assert.match(loader, /fullApp: true/);
   assert.match(loader, /embedHeight: "800px"/);
   assert.match(loader, /dynamicHeight: false/);
@@ -157,6 +158,33 @@ test("reader loader offers only standard and fullInteractive mapped comments", a
   assert.match(loader, /installInteractiveDiscussion\(target, record\)/);
   assert.match(loader, /\/discussionbridge\/assets\/loader\.css/);
   assert.doesNotMatch(loader, /connectionSecret|X-DiscussionBridge-Secret/);
+});
+
+test("simple comments fetch bounded missing batches and disclose replies after five", async () => {
+  const posts = Array.from({ length: 8 }, (_, index) => ({
+    id: index + 1,
+    post_number: index + 1,
+    username: `user${index + 1}`,
+    name: `Demo ${index + 1}`,
+    cooked: index === 7 ? '<p>Safe final reply</p><script>bad()</script>' : `<p>Reply ${index + 1}</p>`,
+    created_at: "2026-08-31T12:00:00.000Z",
+    avatar_template: `/user_avatar/forum.example/user${index + 1}/{size}/1.png`,
+  }));
+  const batches = [];
+  const client = {
+    publicTopic: async () => ({ slug: "ghost-demo", post_stream: { stream: posts.map(({ id }) => id), posts: posts.slice(0, 3) } }),
+    publicTopicPosts: async (_topicId, ids) => {
+      batches.push(ids);
+      return { post_stream: { posts: posts.filter(({ id }) => ids.includes(id)) } };
+    },
+  };
+  const html = await renderSimpleDiscussion(client, 42, "https://forum.example");
+  assert.deepEqual(batches, [[4, 5, 6, 7, 8]]);
+  assert.match(html, /<h2>Comments<\/h2>/);
+  assert.match(html, /Show 2 more comments/);
+  assert.match(html, /Safe final reply/);
+  assert.doesNotMatch(html, /<script>|bad\(\)/);
+  assert.doesNotMatch(html, /Reply 1/);
 });
 
 test("serialized state updates retain concurrent identities", async () => {
