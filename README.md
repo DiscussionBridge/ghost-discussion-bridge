@@ -40,6 +40,10 @@ runs as a small loopback-only Node service beside Ghost.
   default. An empty
   attribute remains the backwards-compatible `full` mode; every other value
   fails closed.
+  The stock Ghost demo's theme-level integration selects the per-post mode from
+  internal tags: `#discussionbridge-simple`, `#discussionbridge-full`, or the
+  default `#discussionbridge` fullInteractive path. The mode marker belongs to
+  the theme integration rather than authored article HTML.
   The loader renders a native page-level `Discussion` heading and an
   `Open discussion` link from the validated stored topic URL before the
   comments surface.
