@@ -170,6 +170,8 @@ if (nativeArticle) {
 }
 
 for (const target of document.querySelectorAll("[data-discussionbridge-resource]")) {
+  if (target.dataset.discussionbridgePresentationMounted === "true") continue;
+  target.dataset.discussionbridgePresentationMounted = "true";
   const resource = target.getAttribute("data-discussionbridge-resource");
   if (!/^[0-9a-f-]{36}$/i.test(resource || "")) continue;
   fetch(`/discussionbridge/presentation/${encodeURIComponent(resource)}`, { credentials: "same-origin", redirect: "error" })
@@ -190,6 +192,8 @@ for (const target of document.querySelectorAll("[data-discussionbridge-resource]
 }
 
 for (const target of document.querySelectorAll("[data-discussionbridge-comments]")) {
+  if (target.dataset.discussionbridgeCommentsMounted === "true") continue;
+  target.dataset.discussionbridgeCommentsMounted = "true";
   const mode = target.getAttribute("data-discussionbridge-comments") || "full";
   if (!new Set(["simple", "full", "fullInteractive"]).has(mode)) {
     target.textContent = "Discussion is temporarily unavailable.";

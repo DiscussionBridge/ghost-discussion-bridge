@@ -13,7 +13,7 @@ import { StateStore } from "../src/state-store.mjs";
 import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignature } from "../src/service.mjs";
 
 test("rich-content code injection is additive and idempotent", () => {
-  const script = '<script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.21.2" defer></script>';
+  const script = '<script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.22" defer></script>';
   assert.equal(mergeCodeInjection(null), script);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
@@ -35,7 +35,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.21");
+  assert.equal(record.adapter_version, "0.1.0-alpha.22");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -173,6 +173,8 @@ test("reader loader offers simple, standard, and fullInteractive mapped comments
   assert.match(loader, /false, true\)/);
   assert.match(loader, /className: "discussion-bridge-source-presentation"/);
   assert.match(loader, /installInteractiveDiscussion\(target, record\)/);
+  assert.match(loader, /discussionbridgeCommentsMounted/);
+  assert.match(loader, /discussionbridgePresentationMounted/);
   assert.match(loader, /\/discussionbridge\/assets\/loader\.css/);
   assert.match(loader, /font-size:14px/);
   assert.doesNotMatch(loader, /connectionSecret|X-DiscussionBridge-Secret/);
@@ -256,6 +258,6 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.21");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.22");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
