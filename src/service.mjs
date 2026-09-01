@@ -105,7 +105,7 @@ async function renderSimpleDiscussion(client, topicId, forumOrigin) {
   let content = replies.length ? replies.slice(0, INITIAL_SIMPLE_REPLIES).join("") : '<p class="discussionbridge-simple__empty">No comments yet.</p>';
   const remaining = replies.slice(INITIAL_SIMPLE_REPLIES);
   if (remaining.length) content += `<details class="discussionbridge-simple__more"><summary><span class="discussionbridge-simple__more-closed">Show ${remaining.length} more ${remaining.length === 1 ? "comment" : "comments"}</span><span class="discussionbridge-simple__more-open">Show fewer comments</span></summary>${remaining.join("")}</details>`;
-  if (postStream.stream.length - 1 > MAX_SIMPLE_REPLIES) content += `<p class="discussionbridge-simple__limit">Showing the first ${MAX_SIMPLE_REPLIES} replies. <a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer">View the complete discussion on The Bridge</a>.</p>`;
+  if (postStream.stream.length - 1 > MAX_SIMPLE_REPLIES) content += `<p class="discussionbridge-simple__limit">Showing the first ${MAX_SIMPLE_REPLIES} comments. <a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer">View the complete discussion on The Bridge</a>.</p>`;
   const attribution = poweredBy
     ? `<a class="discussionbridge-powered-by" href="https://www.discourse.org/powered-by" aria-label="Powered by Discourse" rel="nofollow noopener noreferrer"><span>Powered by</span><span class="discussionbridge-powered-by__wordmark">${discourseWordmark}</span></a>`
     : "";
