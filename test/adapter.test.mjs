@@ -6,6 +6,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
+import { ghostAdminToken } from "../src/ghost-admin-client.mjs";
+import { nativePublication, syncPublications } from "../src/publication-sync.mjs";
 import { StateStore } from "../src/state-store.mjs";
 import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignature } from "../src/service.mjs";
 
@@ -13,7 +15,8 @@ async function config() {
   const root = await mkdtemp(join(tmpdir(), "ghost-discussionbridge-"));
   await writeFile(join(root, "secret"), "s".repeat(32));
   await writeFile(join(root, "webhook"), "w".repeat(32));
-  return loadConfig({ DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example", DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567", DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: join(root, "secret"), DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example", DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE: join(root, "webhook"), DISCUSSIONBRIDGE_STATE_FILE: join(root, "state.json"), DISCUSSIONBRIDGE_LANE: "ghost-alpha" });
+  await writeFile(join(root, "admin-key"), `${"a".repeat(24)}:${"b".repeat(64)}`);
+  return loadConfig({ DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example", DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567", DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: join(root, "secret"), DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example", DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE: join(root, "webhook"), DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE: join(root, "admin-key"), DISCUSSIONBRIDGE_STATE_FILE: join(root, "state.json"), DISCUSSIONBRIDGE_LANE: "ghost-alpha" });
 }
 
 test("maps an authoritative published Ghost post and its authors", async () => {
@@ -23,7 +26,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.19");
+  assert.equal(record.adapter_version, "0.1.0-alpha.20");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -196,4 +199,47 @@ test("serialized state updates retain concurrent identities", async () => {
     state.posts[`ghost-post:${index}`] = { resource_id: String(index) };
   })));
   assert.equal(Object.keys((await store.read()).posts).length, 12);
+});
+
+function publicationRecord(overrides = {}) {
+  return {
+    resource_id: "11111111-1111-4111-8111-111111111111",
+    direction: "from_discourse",
+    state: "healthy",
+    title: "The Bridge publishes everywhere",
+    topic_id: 53,
+    topic_url: "https://forum.example/t/the-bridge-publishes-everywhere/53",
+    content_html: "<h2>One source</h2><p>Native Ghost content.</p>",
+    source: { platform: "discourse", origin: "https://forum.example", topic_id: 53, topic_url: "https://forum.example/t/the-bridge-publishes-everywhere/53", post_id: 149, post_number: 1, post_version: 1, revision: "post:149:version:1", updated_at: "2026-09-01T12:00:00.000000Z", author: { username: "discussionbridge", name: "DiscussionBridge", profile_url: "https://forum.example/u/discussionbridge" } },
+    bindings: [{ role: "presentation", state: "active", external_id: "bridge-publisher:ghost", canonical_url: "https://ghost.example/the-bridge-publishes-everywhere/", native_materialization: true }],
+    ...overrides,
+  };
+}
+
+test("native publication requires explicit authority and exact identities", async () => {
+  const cfg = await config();
+  const publication = nativePublication(publicationRecord(), cfg);
+  assert.equal(publication.slug, "the-bridge-publishes-everywhere");
+  assert.equal(publication.revision, "post:149:version:1");
+  assert.match(publication.html, /data-discussionbridge-comments="fullInteractive"/);
+  assert.match(publication.html, /Ghost 6\.59\.0/);
+  assert.equal(nativePublication(publicationRecord({ bindings: [{ ...publicationRecord().bindings[0], native_materialization: false }] }), cfg), null);
+  assert.throws(() => nativePublication(publicationRecord({ source: { ...publicationRecord().source, origin: "https://other.example" } }), cfg), /source/);
+  assert.throws(() => nativePublication(publicationRecord({ bindings: [{ ...publicationRecord().bindings[0], canonical_url: "https://ghost.example/too/deep/" }] }), cfg), /slug/);
+  assert.match(ghostAdminToken(`${"a".repeat(24)}:${"b".repeat(64)}`, 1000), /^[^.]+\.[^.]+\.[^.]+$/u);
+});
+
+test("publication sync creates once, skips presentation records and exact retry is unchanged", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const records = [publicationRecord(), publicationRecord({ resource_id: "22222222-2222-4222-8222-222222222222", bindings: [{ ...publicationRecord().bindings[0], native_materialization: false }] })];
+  const bridge = { records: async () => ({ bridge_records: records, pagination: { page: 1, pages: 1 } }) };
+  const created = [];
+  const ghost = { create: async (post) => { created.push(post); return { id: "a".repeat(24), slug: post.slug, url: `https://ghost.example/${post.slug}/` }; } };
+  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 1, updated: 0, unchanged: 0, skipped: 1, failed: 0 });
+  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 0, updated: 0, unchanged: 1, skipped: 1, failed: 0 });
+  assert.equal(created.length, 1);
+  const state = await store.read();
+  assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
+  assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });

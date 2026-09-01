@@ -11,9 +11,11 @@ export class StateStore {
     try {
       const parsed = JSON.parse(await readFile(this.path, "utf8"));
       if (!parsed || parsed.version !== 1 || typeof parsed.posts !== "object" || typeof parsed.presentations !== "object") throw new Error();
+      if (parsed.publications === undefined) parsed.publications = {};
+      if (!parsed.publications || typeof parsed.publications !== "object" || Array.isArray(parsed.publications)) throw new Error();
       return parsed;
     } catch (error) {
-      if (error.code === "ENOENT") return { version: 1, posts: {}, presentations: {} };
+      if (error.code === "ENOENT") return { version: 1, posts: {}, presentations: {}, publications: {} };
       throw new Error("Invalid DiscussionBridge state file");
     }
   }

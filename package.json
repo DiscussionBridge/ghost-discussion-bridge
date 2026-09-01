@@ -1,13 +1,14 @@
 {
   "name": "ghost-discussion-bridge",
-  "version": "0.1.0-alpha.19",
+  "version": "0.1.0-alpha.20",
   "private": true,
   "type": "module",
   "scripts": {
     "build:browser": "node scripts/build-browser.mjs",
     "start": "node src/index.mjs",
+    "sync:publications": "node src/sync-publications.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "npm run build:browser && node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/state-store.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check src/browser-loader.mjs && node --check public/discussionbridge-loader.js"
+    "check": "npm run build:browser && node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/ghost-admin-client.mjs && node --check src/publication-sync.mjs && node --check src/sync-publications.mjs && node --check src/state-store.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check src/browser-loader.mjs && node --check public/discussionbridge-loader.js"
   },
   "dependencies": {
     "sanitize-html": "2.17.7"

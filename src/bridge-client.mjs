@@ -65,6 +65,11 @@ export class BridgeClient {
     return this.request("GET", `/discussion-bridge/v1/bridge-records/${encodeURIComponent(resourceId)}.json`);
   }
 
+  async records(page = 1) {
+    if (!Number.isSafeInteger(page) || page < 1 || page > 10_000) throw new Error("Invalid records page");
+    return this.request("GET", `/discussion-bridge/v1/bridge-records.json?page=${page}`);
+  }
+
   async publicTopic(topicId) {
     if (!Number.isSafeInteger(topicId) || topicId <= 0) throw new Error("Invalid topic ID");
     return this.request("GET", `/t/${topicId}.json`, undefined, false);
@@ -148,7 +153,7 @@ export function ghostRecord(payload, config, correlationId) {
     published: true,
     visibility: "unlisted",
     adapter_id: "ghost-discussion-bridge",
-    adapter_version: "0.1.0-alpha.19",
+    adapter_version: "0.1.0-alpha.20",
     correlation_id: correlationId,
     ...authorship,
     ...(config.lane ? { lane: config.lane } : {}),

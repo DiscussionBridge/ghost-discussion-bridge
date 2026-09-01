@@ -39,6 +39,7 @@ export function loadConfig(environment = process.env) {
     connectionId,
     connectionSecret: protectedValue(required("DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE", environment)),
     webhookSecret: protectedValue(required("DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE", environment)),
+    ghostAdminApiKey: protectedValue(required("DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE", environment)),
     stateFile: required("DISCUSSIONBRIDGE_STATE_FILE", environment),
     lane,
     port,

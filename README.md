@@ -22,6 +22,14 @@ runs as a small loopback-only Node service beside Ghost.
   post remains the article and is not repeated in the discussion frame; its
   replies, session and reply controls remain owned by Discourse. A validated
   topic identity is required before either presentation is exposed.
+- A From Discourse binding may separately authorize **native
+  materialization**. `npm run sync:publications` then creates or updates a
+  genuine Ghost post through Ghost's Admin API. Presentation-only records are
+  ignored. The adapter stores the Discourse post revision and Ghost post ID,
+  so an exact retry is unchanged and a later first-post revision updates the
+  same Ghost post. The native post carries a source/provenance note and its
+  mapped fullInteractive discussion; it is tagged `#discussionbridge-source`,
+  not the outbound `#discussionbridge` opt-in, preventing a publication loop.
 - Published Ghost posts can render their exact mapped Discourse discussion.
   The same-origin loader resolves the current canonical Ghost URL through the
   adapter's nonsecret comments endpoint, then starts Discourse's standard
@@ -57,14 +65,16 @@ runs as a small loopback-only Node service beside Ghost.
 
 Bridge and webhook secrets live in root-protected files. They are never
 accepted through public JSON, returned in responses, or written to the state
-file. The service binds only to loopback. It does not implement edit/delete
-synchronization or a generic control plane.
+file. The service binds only to loopback. It does not implement Ghost-to-forum
+edit/delete synchronization, forum deletion propagation, or a generic control
+plane.
 
 ## Required environment
 
 `DISCUSSIONBRIDGE_SERVER_URL`, `DISCUSSIONBRIDGE_CONNECTION_ID`,
 `DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE`, `DISCUSSIONBRIDGE_GHOST_ORIGIN`,
 `DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE`, and
+`DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE`, and
 `DISCUSSIONBRIDGE_STATE_FILE`. `DISCUSSIONBRIDGE_PORT` defaults to `8792` and
 `DISCUSSIONBRIDGE_LANE` is optional.
 
