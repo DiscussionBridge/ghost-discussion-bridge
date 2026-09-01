@@ -110,7 +110,7 @@ function installContents(root) {
   if (!document.querySelector("style[data-discussionbridge-contents-style]")) {
     const style = document.createElement("style");
     style.setAttribute("data-discussionbridge-contents-style", "");
-    style.textContent = ".discussionbridge-contents{margin:0 0 2rem;padding:1rem 1.25rem;border:1px solid var(--color-border,#d8d8d8);border-radius:.5rem;background:var(--color-lighter-gray,#f7f7f7)}.discussionbridge-contents strong{display:block;margin-bottom:.5rem}.discussionbridge-contents ol{margin:0;padding-left:1.25rem}.discussionbridge-contents__nested{margin-left:1rem}.discussionbridge-mermaid{margin-block:1.5rem;overflow-x:auto}";
+    style.textContent = ".discussionbridge-contents{margin:0 0 2rem;padding:1rem 1.25rem;border:1px solid var(--color-border,#d8d8d8);border-radius:.5rem;background:var(--color-lighter-gray,#f7f7f7)}.discussionbridge-contents strong{display:block;margin-bottom:.5rem}.discussionbridge-contents ol{margin:0;padding-left:1.25rem}.discussionbridge-contents__nested{margin-left:1rem}.discussionbridge-mermaid{max-width:100%;margin-block:1.5rem;overflow-x:auto}.discussionbridge-mermaid svg{display:block;height:auto;max-width:100%;margin-inline:auto}";
     document.head.appendChild(style);
   }
 }
