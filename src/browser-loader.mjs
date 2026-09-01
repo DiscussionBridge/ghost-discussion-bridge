@@ -160,7 +160,14 @@ function installInteractiveDiscussion(target, record, addHeader = true, sourcePr
 }
 
 const nativeArticle = document.querySelector(".gh-content");
-if (nativeArticle) renderRichContent(nativeArticle).then(() => installContents(nativeArticle));
+if (nativeArticle) {
+  renderRichContent(nativeArticle).then(() => installContents(nativeArticle));
+  if (document.body.classList.contains("tag-hash-discussionbridge-source") && !nativeArticle.querySelector("[data-discussionbridge-comments]")) {
+    const discussion = document.createElement("div");
+    discussion.setAttribute("data-discussionbridge-comments", "fullInteractive");
+    nativeArticle.appendChild(discussion);
+  }
+}
 
 for (const target of document.querySelectorAll("[data-discussionbridge-resource]")) {
   const resource = target.getAttribute("data-discussionbridge-resource");

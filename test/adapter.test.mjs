@@ -13,7 +13,7 @@ import { StateStore } from "../src/state-store.mjs";
 import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignature } from "../src/service.mjs";
 
 test("rich-content code injection is additive and idempotent", () => {
-  const script = '<script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.21.1" defer></script>';
+  const script = '<script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.21.2" defer></script>';
   assert.equal(mergeCodeInjection(null), script);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
@@ -124,7 +124,7 @@ test("presentation is allowlisted and sanitized", async () => {
 test("comments lookup exposes only an exact stored Ghost mapping", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
-  await store.write({ version: 1, posts: { "ghost-post:abc": { resource_id: "11111111-1111-4111-8111-111111111111", topic_id: 42, topic_url: "https://forum.example/t/ghost/42", canonical_url: "https://ghost.example/article/" } }, presentations: {} });
+  await store.write({ version: 1, posts: { "ghost-post:abc": { resource_id: "11111111-1111-4111-8111-111111111111", topic_id: 42, topic_url: "https://forum.example/t/ghost/42", canonical_url: "https://ghost.example/article/" } }, presentations: {}, publications: { "22222222-2222-4222-8222-222222222222": { topic_id: 53, topic_url: "https://forum.example/t/native/53", canonical_url: "https://ghost.example/native/" } } });
   const server = buildServer(cfg, store, {});
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
@@ -132,6 +132,9 @@ test("comments lookup exposes only an exact stored Ghost mapping", async () => {
     const response = await fetch(`http://127.0.0.1:${address.port}/comments?source=${encodeURIComponent("https://ghost.example/article/")}`);
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { topic_id: 42, topic_url: "https://forum.example/t/ghost/42", forum_origin: "https://forum.example" });
+    const native = await fetch(`http://127.0.0.1:${address.port}/comments?source=${encodeURIComponent("https://ghost.example/native/")}`);
+    assert.equal(native.status, 200);
+    assert.deepEqual(await native.json(), { topic_id: 53, topic_url: "https://forum.example/t/native/53", forum_origin: "https://forum.example" });
     assert.equal((await fetch(`http://127.0.0.1:${address.port}/comments?source=${encodeURIComponent("https://ghost.example/missing/")}`)).status, 404);
     assert.equal((await fetch(`http://127.0.0.1:${address.port}/comments?source=${encodeURIComponent("https://evil.example/article/")}`)).status, 502);
   } finally { server.close(); }
@@ -154,6 +157,7 @@ test("reader loader offers simple, standard, and fullInteractive mapped comments
   assert.match(loader, /embedMinHeight: "360"/);
   assert.match(loader, /aria-label", "On this page"/);
   assert.match(loader, /const nativeArticle = document\.querySelector\("\.gh-content"\)/);
+  assert.match(loader, /tag-hash-discussionbridge-source/);
   assert.match(loader, /installContents\(target\)/);
   assert.match(loader, /installContents\(nativeArticle\)/);
   assert.match(loader, /topicId: record\.topic_id/);

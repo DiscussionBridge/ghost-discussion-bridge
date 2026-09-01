@@ -165,7 +165,8 @@ export function buildServer(config, store, client = new BridgeClient(config)) {
       if (request.method === "GET" && url.pathname === "/comments") {
         const sourceUrl = exactGhostSource(url.searchParams.get("source"), config.ghostOrigin);
         const state = await store.read();
-        const matches = Object.values(state.posts).filter((post) => post?.canonical_url === sourceUrl);
+        const publications = Object.entries(state.publications ?? {}).map(([resourceId, publication]) => ({ ...publication, resource_id: resourceId }));
+        const matches = [...Object.values(state.posts), ...publications].filter((post) => post?.canonical_url === sourceUrl);
         if (matches.length !== 1) return json(response, 404, { error: "not_found" });
         const post = matches[0];
         if (!UUID.test(post.resource_id ?? "") || !Number.isSafeInteger(post.topic_id) || post.topic_id <= 0) throw new Error("Invalid stored discussion identity");
