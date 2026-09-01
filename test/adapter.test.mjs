@@ -15,8 +15,9 @@ import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignat
 test("rich-content code injection is additive and idempotent", () => {
   const script = mergeCodeInjection(null);
   assert.match(script, /data-discussionbridge-comments-bootstrap/);
-  assert.match(script, /let host = document\.querySelector\("\.gh-comments"\)/);
+  assert.match(script, /let host = document\.querySelector\("\[data-discussionbridge-comments-host\]"\)/);
   assert.match(script, /host = document\.createElement\("section"\)/);
+  assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
   assert.match(script, /0\.1\.0-alpha\.22/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);

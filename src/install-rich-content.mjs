@@ -5,12 +5,13 @@ import { pathToFileURL } from "node:url";
 const COMMENTS_BOOTSTRAP = `<script data-discussionbridge-comments-bootstrap>
 (() => {
   if (!document.body.classList.contains("tag-hash-discussionbridge")) return;
-  let host = document.querySelector(".gh-comments");
+  let host = document.querySelector("[data-discussionbridge-comments-host]");
   if (!host) {
     const article = document.querySelector(".gh-article");
     if (!article) return;
     host = document.createElement("section");
-    host.className = "gh-comments discussionbridge-comments-host gh-canvas";
+    host.className = "discussionbridge-comments-host gh-canvas";
+    host.setAttribute("data-discussionbridge-comments-host", "");
     article.appendChild(host);
   }
   host.replaceChildren();
