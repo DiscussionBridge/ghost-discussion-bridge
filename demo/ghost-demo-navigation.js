@@ -37,6 +37,7 @@
   section.setAttribute("data-discussionbridge-read-more", "");
   const inner = document.createElement("div");
   inner.className = "gh-container-inner gh-inner";
+  inner.style.display = "block";
   const heading = document.createElement("h2");
   heading.className = "gh-container-title";
   heading.textContent = "Read more";

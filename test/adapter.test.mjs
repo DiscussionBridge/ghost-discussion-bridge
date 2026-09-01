@@ -30,6 +30,7 @@ test("demo page navigation adds Read more without duplicating the stock section"
   assert.match(navigation, /page-template/);
   assert.match(navigation, /heading\.textContent\?\.trim\(\) === "Read more"/);
   assert.match(navigation, /data-discussionbridge-read-more/);
+  assert.match(navigation, /inner\.style\.display = "block"/);
   assert.match(navigation, /\.gh-footer/);
   assert.match(navigation, /\/from-the-bridge\//);
   assert.match(navigation, /\/ghost-simple-comments\//);
