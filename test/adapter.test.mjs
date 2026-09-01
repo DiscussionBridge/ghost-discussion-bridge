@@ -41,7 +41,8 @@ test("demo page navigation adds Read more without duplicating the stock section"
   assert.match(navigation, /\/ghost-full-comments\//);
   assert.match(navigation, /\/the-bridge-publishes-everywhere\//);
   const page = await readFile(new URL("../demo/ghost-demos-page.html", import.meta.url), "utf8");
-  assert.equal((page.match(/discussionbridge-demo-index__card/g) ?? []).length, 6);
+  assert.equal((page.match(/discussionbridge-demo-index__card/g) ?? []).length, 5);
+  assert.doesNotMatch(page, /Connected publishing|ghost-publishing-connected-to-discourse/u);
   assert.match(page, /Publishing through The Bridge/);
   assert.match(page, /The Bridge — Discourse as Publisher/);
 });
