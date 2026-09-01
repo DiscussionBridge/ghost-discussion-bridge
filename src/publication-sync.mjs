@@ -16,10 +16,12 @@ function escape(value) {
 }
 
 export function nativePublication(record, config) {
+  if (!record || typeof record !== "object") throw new Error("Invalid publication record");
+  const bindings = Array.isArray(record.bindings) ? record.bindings.filter((item) => item?.role === "presentation" && item?.state === "active") : [];
+  if (!bindings.some((item) => item.native_materialization === true)) return null;
+  if (bindings.length !== 1 || bindings[0].native_materialization !== true) throw new Error("Ambiguous native publication authority");
   if (!record || record.direction !== "from_discourse" || record.state !== "healthy" || !UUID.test(record.resource_id ?? "")) throw new Error("Invalid publication record");
   if (!Number.isSafeInteger(record.topic_id) || record.topic_id <= 0 || typeof record.content_html !== "string" || !record.content_html.trim() || Buffer.byteLength(record.content_html) > 128 * 1024) throw new Error("Invalid publication content");
-  const bindings = Array.isArray(record.bindings) ? record.bindings.filter((item) => item?.role === "presentation" && item?.state === "active") : [];
-  if (bindings.length !== 1 || bindings[0].native_materialization !== true) return null;
   const destination = safeUrl(bindings[0].canonical_url, config.ghostOrigin, "publication destination");
   const segments = destination.pathname.split("/").filter(Boolean);
   if (segments.length !== 1 || destination.pathname !== `/${segments[0]}/` || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(segments[0])) throw new Error("Invalid publication slug");
