@@ -92,6 +92,21 @@ test("uses bounded credentialed requests without following redirects", async () 
   assert.equal(seen.options.headers["X-DiscussionBridge-Secret"], "s".repeat(32));
 });
 
+test("reads the exact public Discourse branding setting from the browser bootstrap", async () => {
+  const cfg = await config();
+  let seen;
+  const settings = JSON.stringify({ enable_powered_by_discourse: true });
+  const preload = JSON.stringify({ siteSettings: settings });
+  const client = new BridgeClient(cfg, async (url, options) => {
+    seen = { url, options };
+    return new Response(`<script type="application/json" id="data-preloaded">${preload}</script>`, { status: 200, headers: { "Content-Type": "text/html" } });
+  });
+  assert.equal(await client.publicPoweredByDiscourse(), true);
+  assert.equal(seen.url, "https://forum.example/");
+  assert.match(seen.options.headers["User-Agent"], /^Mozilla\/5\.0/);
+  assert.equal(Object.hasOwn(seen.options.headers, "X-DiscussionBridge-Secret"), false);
+});
+
 test("webhook resolves once and persists no secret", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
@@ -220,6 +235,7 @@ test("simple comments fetch bounded missing batches and disclose replies after f
   const batches = [];
   const client = {
     publicTopic: async () => ({ slug: "ghost-demo", post_stream: { stream: posts.map(({ id }) => id), posts: posts.slice(0, 3) } }),
+    publicPoweredByDiscourse: async () => true,
     publicTopicPosts: async (_topicId, ids) => {
       batches.push(ids);
       return { post_stream: { posts: posts.filter(({ id }) => ids.includes(id)) } };
@@ -230,6 +246,8 @@ test("simple comments fetch bounded missing batches and disclose replies after f
   assert.match(html, /<h2>Comments<\/h2>/);
   assert.match(html, /Show 2 more comments/);
   assert.match(html, /Safe final reply/);
+  assert.match(html, /Powered by Discourse/);
+  assert.match(html, /discussionbridge-powered-by__wordmark/);
   assert.doesNotMatch(html, /<script>|bad\(\)/);
   assert.doesNotMatch(html, /Reply 1/);
 });

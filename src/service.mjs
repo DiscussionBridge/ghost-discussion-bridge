@@ -1,4 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import sanitizeHtml from "sanitize-html";
 import { BridgeClient, ghostRecord } from "./bridge-client.mjs";
@@ -6,6 +7,9 @@ import { BridgeClient, ghostRecord } from "./bridge-client.mjs";
 const MAX_WEBHOOK_BYTES = 131_072;
 const INITIAL_SIMPLE_REPLIES = 5;
 const MAX_SIMPLE_REPLIES = 50;
+const BRANDING_CACHE_MS = 10 * 60 * 1000;
+const brandingCache = new Map();
+const discourseWordmark = readFileSync(new URL("../assets/discourse-wordmark.svg", import.meta.url), "utf8");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function validGhostSignature(header, rawBody, secret, now = Date.now()) {
@@ -66,7 +70,7 @@ function sanitizeReply(html) {
 }
 
 async function renderSimpleDiscussion(client, topicId, forumOrigin) {
-  const topic = await client.publicTopic(topicId);
+  const [topic, poweredBy] = await Promise.all([client.publicTopic(topicId), poweredByDiscourse(client, forumOrigin).catch(() => false)]);
   const postStream = topic?.post_stream;
   if (!postStream || !Array.isArray(postStream.posts) || !Array.isArray(postStream.stream)) throw new Error("Invalid topic response");
   const targetIds = postStream.stream.slice(1, MAX_SIMPLE_REPLIES);
@@ -102,7 +106,19 @@ async function renderSimpleDiscussion(client, topicId, forumOrigin) {
   const remaining = replies.slice(INITIAL_SIMPLE_REPLIES);
   if (remaining.length) content += `<details class="discussionbridge-simple__more"><summary><span class="discussionbridge-simple__more-closed">Show ${remaining.length} more ${remaining.length === 1 ? "comment" : "comments"}</span><span class="discussionbridge-simple__more-open">Show fewer comments</span></summary>${remaining.join("")}</details>`;
   if (postStream.stream.length - 1 > MAX_SIMPLE_REPLIES) content += `<p class="discussionbridge-simple__limit">Showing the first ${MAX_SIMPLE_REPLIES} replies. <a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer">View the complete discussion on The Bridge</a>.</p>`;
-  return `<section class="discussionbridge-simple"><div class="discussionbridge-comments-header"><h2>Comments</h2><a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer">Open discussion</a></div>${content}</section>`;
+  const attribution = poweredBy
+    ? `<a class="discussionbridge-powered-by" href="https://www.discourse.org/powered-by" aria-label="Powered by Discourse" rel="nofollow noopener noreferrer"><span>Powered by</span><span class="discussionbridge-powered-by__wordmark">${discourseWordmark}</span></a>`
+    : "";
+  return `<section class="discussionbridge-simple"><div class="discussionbridge-comments-header"><h2>Comments</h2><a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer">Open discussion</a></div>${content}${attribution}</section>`;
+}
+
+async function poweredByDiscourse(client, forumOrigin) {
+  const now = Date.now();
+  const cached = brandingCache.get(forumOrigin);
+  if (cached && cached.expiresAt > now) return cached.value;
+  const value = client.publicPoweredByDiscourse();
+  brandingCache.set(forumOrigin, { expiresAt: now + BRANDING_CACHE_MS, value });
+  try { return await value; } catch (error) { brandingCache.delete(forumOrigin); throw error; }
 }
 
 export function buildServer(config, store, client = new BridgeClient(config)) {

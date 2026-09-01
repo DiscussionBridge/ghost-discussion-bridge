@@ -85,6 +85,39 @@ export class BridgeClient {
     return this.request("GET", `/t/${topicId}/posts.json?${query}`, undefined, false);
   }
 
+  async publicPoweredByDiscourse() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    let response;
+    try {
+      response = await this.fetch(`${this.config.serverUrl}/`, {
+        credentials: "omit",
+        headers: {
+          Accept: "text/html",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+        },
+        redirect: "error",
+        signal: controller.signal,
+      });
+    } catch {
+      throw new Error("Discourse branding transport failed");
+    } finally {
+      clearTimeout(timer);
+    }
+    if (response.url && new URL(response.url).origin !== this.config.serverUrl) throw new Error("Unexpected response origin");
+    if (!response.ok || !(response.headers.get("content-type") ?? "").toLowerCase().startsWith("text/html")) throw new Error("Invalid Discourse branding response");
+    const declared = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > 512 * 1024) throw new Error("Response too large");
+    const text = await response.text();
+    if (Buffer.byteLength(text) > 512 * 1024) throw new Error("Response too large");
+    const match = /<script[^>]+id=["']data-preloaded["'][^>]*>([\s\S]*?)<\/script>/iu.exec(text);
+    if (!match) throw new Error("Discourse branding setting is unavailable");
+    let outer, settings;
+    try { outer = JSON.parse(match[1]); settings = JSON.parse(outer.siteSettings); } catch { throw new Error("Discourse branding setting is invalid"); }
+    if (typeof settings?.enable_powered_by_discourse !== "boolean") throw new Error("Discourse branding setting is invalid");
+    return settings.enable_powered_by_discourse;
+  }
+
   async request(method, path, payload, authenticate = true) {
     const body = payload === undefined ? undefined : JSON.stringify(payload);
     if (body && Buffer.byteLength(body) > MAX_BYTES) throw new Error("Request too large");
