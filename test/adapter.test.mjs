@@ -7,9 +7,18 @@ import test from "node:test";
 import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
 import { ghostAdminToken } from "../src/ghost-admin-client.mjs";
+import { mergeCodeInjection } from "../src/install-rich-content.mjs";
 import { nativePublication, syncPublications } from "../src/publication-sync.mjs";
 import { StateStore } from "../src/state-store.mjs";
 import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignature } from "../src/service.mjs";
+
+test("rich-content code injection is additive and idempotent", () => {
+  const script = '<script src="/discussionbridge/assets/loader.js" defer></script>';
+  assert.equal(mergeCodeInjection(null), script);
+  assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
+  assert.equal(mergeCodeInjection(script), script);
+  assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
+});
 
 async function config() {
   const root = await mkdtemp(join(tmpdir(), "ghost-discussionbridge-"));
