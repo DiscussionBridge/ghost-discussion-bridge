@@ -4,29 +4,35 @@ import { pathToFileURL } from "node:url";
 
 const COMMENTS_BOOTSTRAP = `<script data-discussionbridge-comments-bootstrap>
 (() => {
-  if (!document.body.classList.contains("tag-hash-discussionbridge")) return;
-  let host = document.querySelector("[data-discussionbridge-comments-host]");
-  if (!host) {
-    const article = document.querySelector(".gh-article");
-    if (!article) return;
-    host = document.createElement("section");
-    host.className = "discussionbridge-comments-host gh-canvas";
-    host.setAttribute("data-discussionbridge-comments-host", "");
-    article.appendChild(host);
+  const connectedPost = document.body.classList.contains("tag-hash-discussionbridge");
+  const sourcePost = document.body.classList.contains("tag-hash-discussionbridge-source");
+  if (!connectedPost && !sourcePost) return;
+  let scriptParent = document.body;
+  if (connectedPost) {
+    let host = document.querySelector("[data-discussionbridge-comments-host]");
+    if (!host) {
+      const article = document.querySelector(".gh-article");
+      if (!article) return;
+      host = document.createElement("section");
+      host.className = "discussionbridge-comments-host gh-canvas";
+      host.setAttribute("data-discussionbridge-comments-host", "");
+      article.appendChild(host);
+    }
+    host.replaceChildren();
+    const mode = document.body.classList.contains("tag-hash-discussionbridge-simple")
+      ? "simple"
+      : document.body.classList.contains("tag-hash-discussionbridge-full")
+        ? "full"
+        : "fullInteractive";
+    const target = document.createElement("div");
+    target.setAttribute("data-discussionbridge-comments", mode);
+    host.appendChild(target);
+    scriptParent = host;
   }
-  host.replaceChildren();
-  const mode = document.body.classList.contains("tag-hash-discussionbridge-simple")
-    ? "simple"
-    : document.body.classList.contains("tag-hash-discussionbridge-full")
-      ? "full"
-      : "fullInteractive";
-  const target = document.createElement("div");
-  target.setAttribute("data-discussionbridge-comments", mode);
-  host.appendChild(target);
   const loader = document.createElement("script");
-  loader.src = "/discussionbridge/assets/loader.js?v=0.1.0-alpha.22";
+  loader.src = "/discussionbridge/assets/loader.js?v=0.1.0-alpha.23";
   loader.defer = true;
-  host.appendChild(loader);
+  scriptParent.appendChild(loader);
 })();
 </script>`;
 

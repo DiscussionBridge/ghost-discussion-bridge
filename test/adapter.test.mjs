@@ -15,11 +15,13 @@ import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignat
 test("rich-content code injection is additive and idempotent", () => {
   const script = mergeCodeInjection(null);
   assert.match(script, /data-discussionbridge-comments-bootstrap/);
+  assert.match(script, /tag-hash-discussionbridge-source/);
+  assert.match(script, /if \(!connectedPost && !sourcePost\) return/);
   assert.match(script, /let host = document\.querySelector\("\[data-discussionbridge-comments-host\]"\)/);
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.1\.0-alpha\.22/);
+  assert.match(script, /0\.1\.0-alpha\.23/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -59,7 +61,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.22");
+  assert.equal(record.adapter_version, "0.1.0-alpha.23");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -282,6 +284,6 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.22");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.23");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
