@@ -13,7 +13,7 @@ import { StateStore } from "../src/state-store.mjs";
 import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignature } from "../src/service.mjs";
 
 test("rich-content code injection is additive and idempotent", () => {
-  const script = '<script src="/discussionbridge/assets/loader.js" defer></script>';
+  const script = '<script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.21" defer></script>';
   assert.equal(mergeCodeInjection(null), script);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);

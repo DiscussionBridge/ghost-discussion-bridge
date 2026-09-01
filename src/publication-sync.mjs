@@ -31,7 +31,7 @@ export function nativePublication(record, config) {
   const authorName = bounded(source.author?.name, 200, "source author");
   safeUrl(source.author?.profile_url, config.serverUrl, "source author URL");
   const title = bounded(record.title, 1024, "publication title");
-  const provenance = `<hr><aside class="discussionbridge-publication"><p><strong>Published from <a href="${escape(topicUrl)}">The Bridge</a></strong></p><p>Source author: ${escape(authorName)} · Revision ${escape(source.revision)} · Ghost 6.59.0 · DiscussionBridge for Ghost 0.1.0-alpha.21</p></aside><div data-discussionbridge-comments="fullInteractive"></div><script src="/discussionbridge/assets/loader.js" defer></script>`;
+  const provenance = `<hr><aside class="discussionbridge-publication"><p><strong>Published from <a href="${escape(topicUrl)}">The Bridge</a></strong></p><p>Source author: ${escape(authorName)} · Revision ${escape(source.revision)} · Ghost 6.59.0 · DiscussionBridge for Ghost 0.1.0-alpha.21</p></aside><div data-discussionbridge-comments="fullInteractive"></div><script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.21" defer></script>`;
   return { resourceId: record.resource_id, revision: source.revision, topicId: record.topic_id, topicUrl, destination: destination.href, slug: segments[0], title, html: `${record.content_html}${provenance}` };
 }
 
