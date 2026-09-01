@@ -31,11 +31,17 @@ test("demo page navigation adds Read more without duplicating the stock section"
   assert.match(navigation, /heading\.textContent\?\.trim\(\) === "Read more"/);
   assert.match(navigation, /data-discussionbridge-read-more/);
   assert.match(navigation, /inner\.style\.display = "block"/);
+  assert.match(navigation, /page-ghost-demos/);
+  assert.match(navigation, /discussionbridge-demo-index/);
   assert.match(navigation, /\.gh-footer/);
   assert.match(navigation, /\/from-the-bridge\//);
   assert.match(navigation, /\/ghost-simple-comments\//);
   assert.match(navigation, /\/ghost-full-comments\//);
   assert.match(navigation, /\/the-bridge-publishes-everywhere\//);
+  const page = await readFile(new URL("../demo/ghost-demos-page.html", import.meta.url), "utf8");
+  assert.equal((page.match(/discussionbridge-demo-index__card/g) ?? []).length, 6);
+  assert.match(page, /Publishing through The Bridge/);
+  assert.match(page, /The Bridge — Discourse as Publisher/);
 });
 
 async function config() {
