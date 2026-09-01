@@ -153,7 +153,7 @@ export function ghostRecord(payload, config, correlationId) {
     published: true,
     visibility: "unlisted",
     adapter_id: "ghost-discussion-bridge",
-    adapter_version: "0.1.0-alpha.20",
+    adapter_version: "0.1.0-alpha.21",
     correlation_id: correlationId,
     ...authorship,
     ...(config.lane ? { lane: config.lane } : {}),

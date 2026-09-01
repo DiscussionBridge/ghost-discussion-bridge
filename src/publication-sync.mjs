@@ -31,7 +31,7 @@ export function nativePublication(record, config) {
   const authorName = bounded(source.author?.name, 200, "source author");
   safeUrl(source.author?.profile_url, config.serverUrl, "source author URL");
   const title = bounded(record.title, 1024, "publication title");
-  const provenance = `<hr><aside class="discussionbridge-publication"><p><strong>Published from <a href="${escape(topicUrl)}">The Bridge</a></strong></p><p>Source author: ${escape(authorName)} · Revision ${escape(source.revision)} · Ghost 6.59.0 · DiscussionBridge for Ghost 0.1.0-alpha.20</p></aside><div data-discussionbridge-comments="fullInteractive"></div>`;
+  const provenance = `<hr><aside class="discussionbridge-publication"><p><strong>Published from <a href="${escape(topicUrl)}">The Bridge</a></strong></p><p>Source author: ${escape(authorName)} · Revision ${escape(source.revision)} · Ghost 6.59.0 · DiscussionBridge for Ghost 0.1.0-alpha.21</p></aside><div data-discussionbridge-comments="fullInteractive"></div><script src="/discussionbridge/assets/loader.js" defer></script>`;
   return { resourceId: record.resource_id, revision: source.revision, topicId: record.topic_id, topicUrl, destination: destination.href, slug: segments[0], title, html: `${record.content_html}${provenance}` };
 }
 
@@ -52,7 +52,7 @@ export async function syncPublications(config, store, bridge, ghost) {
       try { publication = nativePublication(record, config); } catch (error) { summary.failed += 1; summary.errors.push({ resource_id: UUID.test(record?.resource_id ?? "") ? record.resource_id : null, reason: error.message }); continue; }
       if (!publication) { summary.skipped += 1; continue; }
       const prior = state.publications[publication.resourceId];
-      if (prior?.revision === publication.revision && prior?.canonical_url === publication.destination) { summary.unchanged += 1; continue; }
+      if (prior?.revision === publication.revision && prior?.canonical_url === publication.destination && prior?.adapter_version === "0.1.0-alpha.21") { summary.unchanged += 1; continue; }
       try {
         let result;
         if (prior) {
@@ -63,7 +63,7 @@ export async function syncPublications(config, store, bridge, ghost) {
           result = await ghost.create({ title: publication.title, slug: publication.slug, html: publication.html, status: "published", tags: [{ name: "#discussionbridge-source" }] });
         }
         if (!result || !/^[a-f0-9]{24}$/iu.test(result.id ?? "") || result.slug !== publication.slug || result.url !== publication.destination) throw new Error("Invalid Ghost publication result");
-        state.publications[publication.resourceId] = { ghost_post_id: result.id, canonical_url: publication.destination, revision: publication.revision, topic_id: publication.topicId, topic_url: publication.topicUrl, synchronized_at: new Date().toISOString() };
+        state.publications[publication.resourceId] = { ghost_post_id: result.id, canonical_url: publication.destination, revision: publication.revision, adapter_version: "0.1.0-alpha.21", topic_id: publication.topicId, topic_url: publication.topicUrl, synchronized_at: new Date().toISOString() };
         summary[prior ? "updated" : "created"] += 1;
       } catch (error) { summary.failed += 1; summary.errors.push({ resource_id: publication.resourceId, reason: error.message }); }
     }

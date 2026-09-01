@@ -26,7 +26,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.20");
+  assert.equal(record.adapter_version, "0.1.0-alpha.21");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -222,6 +222,7 @@ test("native publication requires explicit authority and exact identities", asyn
   assert.equal(publication.slug, "the-bridge-publishes-everywhere");
   assert.equal(publication.revision, "post:149:version:1");
   assert.match(publication.html, /data-discussionbridge-comments="fullInteractive"/);
+  assert.match(publication.html, /\/discussionbridge\/assets\/loader\.js/);
   assert.match(publication.html, /Ghost 6\.59\.0/);
   assert.equal(nativePublication(publicationRecord({ bindings: [{ ...publicationRecord().bindings[0], native_materialization: false }] }), cfg), null);
   assert.throws(() => nativePublication(publicationRecord({ source: { ...publicationRecord().source, origin: "https://other.example" } }), cfg), /source/);
@@ -241,5 +242,6 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.21");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
