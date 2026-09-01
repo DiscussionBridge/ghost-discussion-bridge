@@ -2,7 +2,7 @@ import { loadConfig } from "./config.mjs";
 import { GhostAdminClient } from "./ghost-admin-client.mjs";
 import { pathToFileURL } from "node:url";
 
-const SCRIPT = '<script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.21" defer></script>';
+const SCRIPT = '<script src="/discussionbridge/assets/loader.js?v=0.1.0-alpha.21.1" defer></script>';
 
 export function mergeCodeInjection(value) {
   if (value !== null && value !== undefined && typeof value !== "string") throw new Error("Invalid Ghost code injection setting");
