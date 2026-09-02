@@ -21,9 +21,13 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.1\.0-alpha\.23/);
+  assert.match(script, /0\.1\.0-alpha\.27/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
+  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.27", "0.1.0-alpha.23"));
+  assert.match(upgraded, /0\.1\.0-alpha\.27/);
+  assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.23/);
+  assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
 });
 

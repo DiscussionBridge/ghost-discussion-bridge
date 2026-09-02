@@ -2,6 +2,8 @@ import { loadConfig } from "./config.mjs";
 import { GhostAdminClient } from "./ghost-admin-client.mjs";
 import { pathToFileURL } from "node:url";
 
+const ASSET_VERSION = "0.1.0-alpha.27";
+const COMMENTS_BOOTSTRAP_PATTERN = /<script data-discussionbridge-comments-bootstrap>[\s\S]*?<\/script>/u;
 const COMMENTS_BOOTSTRAP = `<script data-discussionbridge-comments-bootstrap>
 (() => {
   const connectedPost = document.body.classList.contains("tag-hash-discussionbridge");
@@ -30,7 +32,7 @@ const COMMENTS_BOOTSTRAP = `<script data-discussionbridge-comments-bootstrap>
     scriptParent = host;
   }
   const loader = document.createElement("script");
-  loader.src = "/discussionbridge/assets/loader.js?v=0.1.0-alpha.23";
+  loader.src = "/discussionbridge/assets/loader.js?v=${ASSET_VERSION}";
   loader.defer = true;
   scriptParent.appendChild(loader);
 })();
@@ -39,7 +41,9 @@ const COMMENTS_BOOTSTRAP = `<script data-discussionbridge-comments-bootstrap>
 export function mergeCodeInjection(value) {
   if (value !== null && value !== undefined && typeof value !== "string") throw new Error("Invalid Ghost code injection setting");
   const current = (value ?? "").trim();
-  return current.includes("data-discussionbridge-comments-bootstrap") ? current : [current, COMMENTS_BOOTSTRAP].filter(Boolean).join("\n");
+  return COMMENTS_BOOTSTRAP_PATTERN.test(current)
+    ? current.replace(COMMENTS_BOOTSTRAP_PATTERN, COMMENTS_BOOTSTRAP)
+    : [current, COMMENTS_BOOTSTRAP].filter(Boolean).join("\n");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
