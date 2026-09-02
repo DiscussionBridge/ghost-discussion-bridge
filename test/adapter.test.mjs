@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import test from "node:test";
 import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
@@ -11,6 +14,8 @@ import { mergeCodeInjection } from "../src/install-rich-content.mjs";
 import { nativePublication, syncPublications } from "../src/publication-sync.mjs";
 import { StateStore } from "../src/state-store.mjs";
 import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignature } from "../src/service.mjs";
+
+const execFileAsync = promisify(execFile);
 
 test("rich-content code injection is additive and idempotent", () => {
   const script = mergeCodeInjection(null);
@@ -273,14 +278,39 @@ test("simple comments fetch bounded missing batches and disclose replies after f
   assert.doesNotMatch(html, /Reply 1/);
 });
 
-test("serialized state updates retain concurrent identities", async () => {
+test("separate StateStore instances retain concurrent identities", async () => {
   const cfg = await config();
-  const store = new StateStore(cfg.stateFile);
-  await Promise.all(Array.from({ length: 12 }, (_, index) => store.update(async (state) => {
+  const stores = Array.from({ length: 12 }, () => new StateStore(cfg.stateFile));
+  await Promise.all(stores.map((store, index) => store.update(async (state) => {
     await new Promise((resolve) => setTimeout(resolve, index % 3));
     state.posts[`ghost-post:${index}`] = { resource_id: String(index) };
   })));
-  assert.equal(Object.keys((await store.read()).posts).length, 12);
+  assert.equal(Object.keys((await stores[0].read()).posts).length, 12);
+});
+
+test("separate Ghost processes retain webhook, publication, and presentation identities", async () => {
+  const cfg = await config();
+  const writer = fileURLToPath(new URL("./state-writer.mjs", import.meta.url));
+  const stateStore = new URL("../src/state-store.mjs", import.meta.url);
+  await Promise.all([
+    execFileAsync(process.execPath, [writer, stateStore.href, cfg.stateFile, "posts", "ghost-post:overlap", "40"]),
+    execFileAsync(process.execPath, [writer, stateStore.href, cfg.stateFile, "publications", "publication-overlap", "20"]),
+    execFileAsync(process.execPath, [writer, stateStore.href, cfg.stateFile, "presentations", "presentation-overlap", "0"]),
+  ]);
+  const state = await new StateStore(cfg.stateFile).read();
+  assert.equal(state.posts["ghost-post:overlap"].writer, "posts");
+  assert.equal(state.publications["publication-overlap"].writer, "publications");
+  assert.equal(state.presentations["presentation-overlap"].writer, "presentations");
+});
+
+test("a dead process lock is recovered after restart", async () => {
+  const cfg = await config();
+  await writeFile(`${cfg.stateFile}.lock`, `${JSON.stringify({ pid: 2_147_483_647 })}\n`);
+  const store = new StateStore(cfg.stateFile);
+  await store.update(async (state) => {
+    state.posts.restart = { recovered: true };
+  });
+  assert.equal((await store.read()).posts.restart.recovered, true);
 });
 
 function publicationRecord(overrides = {}) {
