@@ -1,35 +1,39 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { dirname } from "node:path";
 import { constants as fsConstants } from "node:fs";
 import { access, link, mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 const LOCK_WAIT_MS = 25;
 const LOCK_TIMEOUT_MS = 120_000;
-
-function failStopAfterKernelLockLoss(error) {
-  process.stderr.write(`Fatal DiscussionBridge state-lock ownership loss: ${error.message}\n`);
-  process.exit(70);
-}
+const MAX_STATE_BYTES = 16 * 1024 * 1024;
+const TRANSACTION_WORKER = fileURLToPath(new URL("./state-transaction-worker.mjs", import.meta.url));
 
 export async function assertStateStoreRuntimePrerequisites() {
   if (process.platform !== "linux") return;
   try {
     await Promise.all([
       access("/usr/bin/flock", fsConstants.X_OK),
-      access("/bin/sh", fsConstants.X_OK),
+      access(process.execPath, fsConstants.X_OK),
     ]);
   } catch {
-    throw new Error("DiscussionBridge requires executable /usr/bin/flock (util-linux) and /bin/sh on Linux");
+    throw new Error("DiscussionBridge requires executable /usr/bin/flock (util-linux) and the current Node runtime on Linux");
   }
 }
 
 export class StateStore {
-  constructor(path, { lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
+  constructor(path, {
+    lockTimeoutMs = LOCK_TIMEOUT_MS,
+    transactionControlPath = "",
+    transactionControlPhase = "",
+  } = {}) {
     this.path = path;
     this.lockPath = `${path}.lock`;
     this.lockTimeoutMs = lockTimeoutMs;
+    this.transactionControlPath = transactionControlPath;
+    this.transactionControlPhase = transactionControlPhase;
     this.tail = Promise.resolve();
   }
 
@@ -47,7 +51,8 @@ export class StateStore {
   }
 
   async write(state) {
-    return this.withLock(() => this.writeUnlocked(state));
+    if (process.platform === "linux") return this.runKernelTransaction(async () => state);
+    return this.withPortableLock(() => this.writeUnlocked(state));
   }
 
   async writeUnlocked(state) {
@@ -63,7 +68,13 @@ export class StateStore {
 
   async update(callback) {
     const operation = this.tail.then(async () => {
-      return this.withLock(async () => {
+      if (process.platform === "linux") {
+        return this.runKernelTransaction(async (state) => {
+          await callback(state);
+          return state;
+        });
+      }
+      return this.withPortableLock(async () => {
         const state = await this.read();
         await callback(state);
         await this.writeUnlocked(state);
@@ -74,75 +85,91 @@ export class StateStore {
     return operation;
   }
 
-  async withLock(callback) {
-    const lease = process.platform === "linux"
-      ? await this.acquireKernelLock()
-      : await this.acquirePortableLock();
+  async runKernelTransaction(callback) {
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o750 });
+    const seconds = Math.max(0.001, this.lockTimeoutMs / 1000).toFixed(3);
+    const child = spawn("/usr/bin/flock", [
+      "--exclusive", "--no-fork", "--timeout", seconds, this.lockPath,
+      process.execPath, TRANSACTION_WORKER, this.path,
+      this.transactionControlPath, this.transactionControlPhase,
+    ], { stdio: ["pipe", "pipe", "pipe"] });
+    let buffer = "";
+    let stderr = "";
+    let stateReceived = false;
+    let committed = false;
+    let resolveState;
+    let rejectState;
+    let resolveCompletion;
+    let rejectCompletion;
+    const stateReady = new Promise((resolve, reject) => { resolveState = resolve; rejectState = reject; });
+    const completion = new Promise((resolve, reject) => { resolveCompletion = resolve; rejectCompletion = reject; });
+    completion.catch(() => undefined);
+    child.stdin.on("error", () => undefined);
+    child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-2048); });
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk;
+      if (Buffer.byteLength(buffer) > MAX_STATE_BYTES * 2) {
+        child.kill("SIGKILL");
+        return;
+      }
+      while (buffer.includes("\n")) {
+        const newline = buffer.indexOf("\n");
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (line.startsWith("STATE ") && !stateReceived) {
+          try {
+            const decoded = Buffer.from(line.slice(6), "base64url").toString("utf8");
+            if (Buffer.byteLength(decoded) > MAX_STATE_BYTES) throw new Error();
+            stateReceived = true;
+            resolveState(JSON.parse(decoded));
+          } catch {
+            child.kill("SIGKILL");
+          }
+        } else if (line === "COMMITTED" && stateReceived) {
+          committed = true;
+        } else {
+          child.kill("SIGKILL");
+        }
+      }
+    });
+    const fail = (error) => {
+      if (!stateReceived) rejectState(error);
+      rejectCompletion(error);
+    };
+    child.once("error", fail);
+    // `close` runs after stdout/stderr have drained, so a final COMMITTED frame
+    // cannot be mistaken for a failed transaction merely because `exit` raced it.
+    child.once("close", (code, signal) => {
+      if (code === 0 && committed) resolveCompletion();
+      else fail(new Error(code === 1 && !stateReceived
+        ? "Timed out waiting for DiscussionBridge state lock"
+        : `DiscussionBridge state transaction failed (${code ?? signal}): ${stderr.trim()}`));
+    });
+
+    try {
+      const state = await stateReady;
+      const nextState = await callback(state);
+      const serialized = JSON.stringify(nextState);
+      if (Buffer.byteLength(serialized) > MAX_STATE_BYTES) throw new Error("DiscussionBridge state is too large");
+      child.stdin.end(`COMMIT ${Buffer.from(serialized).toString("base64url")}\n`);
+      await completion;
+      return nextState;
+    } catch (error) {
+      child.stdin.end();
+      if (child.exitCode === null) child.kill("SIGTERM");
+      await completion.catch(() => undefined);
+      await unlink(`${this.path}.${child.pid}.tmp`).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async withPortableLock(callback) {
+    const lease = await this.acquirePortableLock();
     try {
       return await callback();
     } finally {
       await lease.release();
     }
-  }
-
-  async acquireKernelLock() {
-    await mkdir(dirname(this.path), { recursive: true, mode: 0o750 });
-    const seconds = Math.max(0.001, this.lockTimeoutMs / 1000).toFixed(3);
-    const child = spawn("/usr/bin/flock", [
-      "--exclusive", "--no-fork", "--timeout", seconds, this.lockPath,
-      "/bin/sh", "-c", "printf 'acquired\\n'; cat >/dev/null",
-    ], { stdio: ["pipe", "pipe", "pipe"] });
-    let acquired = false;
-    let releasing = false;
-    let stderr = "";
-    child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-1024); });
-    await new Promise((resolve, reject) => {
-      let stdout = "";
-      let settled = false;
-      const rejectHandshake = (error) => {
-        if (settled) return;
-        settled = true;
-        child.stdout.off("data", onData);
-        reject(error);
-      };
-      const onData = (chunk) => {
-        stdout += chunk;
-        if (!stdout.includes("\n")) return;
-        if (stdout.trim() !== "acquired") {
-          rejectHandshake(new Error("Invalid DiscussionBridge state lock handshake"));
-          return;
-        }
-        acquired = true;
-        settled = true;
-        child.stdout.off("data", onData);
-        resolve();
-      };
-      const onExit = (code, signal) => {
-        const error = new Error(code === 1 && !acquired
-          ? "Timed out waiting for DiscussionBridge state lock"
-          : `DiscussionBridge state lock ${acquired ? "exited unexpectedly" : "failed"} (${code ?? signal}): ${stderr.trim()}`);
-        if (!acquired) rejectHandshake(error);
-        else if (!releasing) failStopAfterKernelLockLoss(error);
-      };
-      const onError = (error) => {
-        if (!acquired) rejectHandshake(error);
-        else if (!releasing) failStopAfterKernelLockLoss(error);
-      };
-      // Ownership-loss monitoring is live before the handshake can be accepted.
-      // There is no listener-transition window in which helper exit can be missed.
-      child.once("exit", onExit);
-      child.once("error", onError);
-      child.stdout.on("data", onData);
-    });
-    return {
-      pid: child.pid,
-      release: async () => {
-        releasing = true;
-        child.stdin.end();
-        if (child.exitCode === null) await new Promise((resolve) => child.once("exit", resolve));
-        if (child.exitCode !== 0) throw new Error(`DiscussionBridge state lock release failed (${child.exitCode})`);
-      },
-    };
   }
 
   async acquirePortableLock() {
@@ -158,9 +185,7 @@ export class StateStore {
         try {
           await link(candidate, this.lockPath);
           await unlink(candidate);
-          return {
-            release: () => this.releasePortableLock({ handle, token }),
-          };
+          return { release: () => this.releasePortableLock({ handle, token }) };
         } catch (error) {
           if (error.code !== "EEXIST") throw error;
         }

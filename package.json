@@ -1,6 +1,6 @@
 {
   "name": "ghost-discussion-bridge",
-  "version": "0.1.0-alpha.34",
+  "version": "0.1.0-alpha.35",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "sync:publications": "node src/sync-publications.mjs",
     "install:rich-content": "node src/install-rich-content.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "npm run build:browser && node --check src/version.mjs && node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/ghost-admin-client.mjs && node --check src/install-rich-content.mjs && node --check src/publication-sync.mjs && node --check src/sync-publications.mjs && node --check src/state-store.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check src/browser-loader.mjs && node --check public/discussionbridge-loader.js"
+    "check": "npm run build:browser && node --check src/version.mjs && node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/ghost-admin-client.mjs && node --check src/install-rich-content.mjs && node --check src/publication-sync.mjs && node --check src/sync-publications.mjs && node --check src/state-store.mjs && node --check src/state-transaction-worker.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check src/browser-loader.mjs && node --check public/discussionbridge-loader.js"
   },
   "dependencies": {
     "sanitize-html": "2.17.7"

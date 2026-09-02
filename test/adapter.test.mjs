@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,11 +35,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.1\.0-alpha\.34/);
+  assert.match(script, /0\.1\.0-alpha\.35/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.34", "0.1.0-alpha.23"));
-  assert.match(upgraded, /0\.1\.0-alpha\.34/);
+  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.35", "0.1.0-alpha.23"));
+  assert.match(upgraded, /0\.1\.0-alpha\.35/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.23/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -90,7 +90,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.34");
+  assert.equal(record.adapter_version, "0.1.0-alpha.35");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -338,12 +338,17 @@ test("Linux state-store prerequisites are present before adapter work begins", {
 
 test("kernel advisory lock times out without entering a live critical section", { skip: process.platform !== "linux" }, async () => {
   const cfg = await config();
-  const holder = new StateStore(cfg.stateFile);
-  const lease = await holder.acquireKernelLock();
+  const holderScript = fileURLToPath(new URL("./state-lock-holder.mjs", import.meta.url));
+  const stateStore = new URL("../src/state-store.mjs", import.meta.url);
+  const marker = `${cfg.stateFile}.timeout-holder-ready`;
+  const holder = execFile(process.execPath, [holderScript, stateStore.href, cfg.stateFile, marker]);
+  for (let attempt = 0; attempt < 200; attempt++) {
+    try { await readFile(marker); break; } catch { await new Promise((resolve) => setTimeout(resolve, 10)); }
+  }
   const contender = new StateStore(cfg.stateFile, { lockTimeoutMs: 100 });
   await assert.rejects(contender.update(async (state) => { state.posts.forbidden = true; }), /Timed out waiting/);
-  await lease.release();
-  assert.equal((await holder.read()).posts.forbidden, undefined);
+  holder.kill("SIGKILL");
+  assert.equal((await new StateStore(cfg.stateFile).read()).posts.forbidden, undefined);
 });
 
 test("kernel releases a crashed holder before two waiting contenders enter", { skip: process.platform !== "linux" }, async () => {
@@ -366,7 +371,7 @@ test("kernel releases a crashed holder before two waiting contenders enter", { s
   assert.equal(state.presentations["after-crash-two"].writer, "presentations");
 });
 
-test("kernel helper loss fail-stops a paused writer before post-loss persistence", { skip: process.platform !== "linux" }, async () => {
+test("kernel helper loss rejects a paused writer without post-loss persistence", { skip: process.platform !== "linux" }, async () => {
   const cfg = await config();
   const writerScript = fileURLToPath(new URL("./state-lock-loss-writer.mjs", import.meta.url));
   const stateStore = new URL("../src/state-store.mjs", import.meta.url);
@@ -387,12 +392,12 @@ test("kernel helper loss fail-stops a paused writer before post-loss persistence
   }
   assert.ok(identity?.helperPid, "paused writer did not expose its lock-helper identity");
   process.kill(identity.helperPid, "SIGKILL");
-  assert.deepEqual(await exited, { code: 70, signal: null });
+  assert.notEqual((await exited).code, 0);
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal((await new StateStore(cfg.stateFile).read()).posts["written-after-lock-loss"], undefined);
 });
 
-test("kernel helper exit immediately after handshake cannot escape loss monitoring", { skip: process.platform !== "linux" }, async () => {
+test("kernel helper exit during the callback cannot publish parent state", { skip: process.platform !== "linux" }, async () => {
   const cfg = await config();
   const boundaryScript = fileURLToPath(new URL("./state-lock-boundary-writer.mjs", import.meta.url));
   const stateStore = new URL("../src/state-store.mjs", import.meta.url);
@@ -402,9 +407,45 @@ test("kernel helper exit immediately after handshake cannot escape loss monitori
     writer.once("error", reject);
     writer.once("exit", (code, signal) => resolve({ code, signal }));
   });
-  assert.deepEqual(exited, { code: 70, signal: null });
-  await assert.rejects(readFile(marker), /ENOENT/);
+  assert.notEqual(exited.code, 0);
+  assert.equal((await new StateStore(cfg.stateFile).read()).posts[marker], undefined);
 });
+
+for (const phase of ["before-read", "after-read", "after-write", "after-sync", "after-rename", "after-directory-sync", "before-exit"]) {
+  test(`kernel transaction helper death at ${phase} preserves the commit boundary`, { skip: process.platform !== "linux" }, async () => {
+    const cfg = await config();
+    const phaseScript = fileURLToPath(new URL("./state-transaction-phase-writer.mjs", import.meta.url));
+    const stateStore = new URL("../src/state-store.mjs", import.meta.url);
+    const control = `${cfg.stateFile}.${phase}`;
+    const ready = `${control}.${phase}.ready`;
+    const writer = execFile(process.execPath, [phaseScript, stateStore.href, cfg.stateFile, control, phase]);
+    const exited = new Promise((resolve, reject) => {
+      writer.once("error", reject);
+      writer.once("exit", (code, signal) => resolve({ code, signal }));
+    });
+    let helperPid;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      try {
+        helperPid = Number.parseInt((await readFile(ready, "utf8")).trim(), 10);
+        break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+    assert.ok(helperPid, `transaction helper did not reach ${phase}`);
+    process.kill(helperPid, "SIGKILL");
+    assert.notEqual((await exited).code, 0);
+    await assert.rejects(stat(`${cfg.stateFile}.${helperPid}.tmp`), /ENOENT/);
+
+    await new StateStore(cfg.stateFile).update(async (state) => {
+      state.posts[`winner-${phase}`] = { retained: true };
+    });
+    const state = await new StateStore(cfg.stateFile).read();
+    const committedBeforeLoss = phase === "after-rename" || phase === "after-directory-sync" || phase === "before-exit";
+    assert.equal(Boolean(state.posts[`forbidden-${phase}`]), committedBeforeLoss);
+    assert.equal(state.posts[`winner-${phase}`].retained, true);
+  });
+}
 
 function publicationRecord(overrides = {}) {
   return {
@@ -447,6 +488,6 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.34");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.35");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });

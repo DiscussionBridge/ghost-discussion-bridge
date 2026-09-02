@@ -83,13 +83,17 @@ Configure only the `post.published` event; ordinary published edits are not an
 implemented synchronization surface.
 
 On Linux, the adapter requires executable `/usr/bin/flock` from `util-linux`
-and `/bin/sh`. Service and command entry points verify those exact paths before
-doing work and fail closed with a direct diagnostic when either prerequisite is
-absent. The kernel lock serializes all state mutations across adapter processes.
-Unexpected loss of its lock-holding helper is fail-stop: the adapter process
-terminates before an in-flight callback can persist without ownership. On
-non-Linux development hosts, the portable hard-link fallback preserves mutual
-exclusion but intentionally does not reclaim locks after a process crash.
+and its current Node runtime. Service and command entry points verify those
+exact paths before doing work and fail closed with a direct diagnostic when a
+prerequisite is absent. The process holding the kernel lock also owns the whole
+durable transaction: it reads state, accepts one bounded replacement over a
+local pipe, writes and fsyncs a private temporary file, performs the atomic
+rename, fsyncs the state directory, and only then acknowledges commit. The
+adapter process never publishes that file. Helper death before rename therefore
+cannot commit; helper death after rename means the commit completed while lock
+ownership still existed and a retry remains idempotent. On non-Linux
+development hosts, the portable hard-link fallback preserves mutual exclusion
+but intentionally does not reclaim locks after a process crash.
 
 Simple mode presents the forum-controlled official Discourse attribution and
 the independent **Connected by DiscussionBridge** credit as separate lines.
