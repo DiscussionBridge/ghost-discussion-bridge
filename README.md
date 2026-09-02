@@ -127,3 +127,7 @@ The live demo serves this exact asset at
 SHA-256 `3d27a8d89c0242b3af7512a3343fa3282b752d0f0e36674b095b11ab4b720936`.
 Its root-protected rollback package is
 `/var/backups/discussionbridge/ghost-social-links-pre-20260901`.
+The stock Ghost defaults that linked X and Facebook to Ghost's own accounts
+were cleared during this deployment; their exact prior values are preserved in
+that rollback package. The dedicated DiscussionBridge footer is therefore the
+only social collection on the demo.
