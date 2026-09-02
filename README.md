@@ -82,6 +82,15 @@ Only posts carrying Ghost's internal `#discussionbridge` tag are eligible.
 Configure only the `post.published` event; ordinary published edits are not an
 implemented synchronization surface.
 
+On Linux, the adapter requires executable `/usr/bin/flock` from `util-linux`
+and `/bin/sh`. Service and command entry points verify those exact paths before
+doing work and fail closed with a direct diagnostic when either prerequisite is
+absent. The kernel lock serializes all state mutations across adapter processes.
+Unexpected loss of its lock-holding helper is fail-stop: the adapter process
+terminates before an in-flight callback can persist without ownership. On
+non-Linux development hosts, the portable hard-link fallback preserves mutual
+exclusion but intentionally does not reclaim locks after a process crash.
+
 Simple mode presents the forum-controlled official Discourse attribution and
 the independent **Connected by DiscussionBridge** credit as separate lines.
 The latter remains present regardless of the forum-wide Discourse branding

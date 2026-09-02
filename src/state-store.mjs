@@ -1,11 +1,29 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import { link, mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { access, link, mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 const LOCK_WAIT_MS = 25;
 const LOCK_TIMEOUT_MS = 120_000;
+
+function failStopAfterKernelLockLoss(error) {
+  process.stderr.write(`Fatal DiscussionBridge state-lock ownership loss: ${error.message}\n`);
+  process.exit(70);
+}
+
+export async function assertStateStoreRuntimePrerequisites() {
+  if (process.platform !== "linux") return;
+  try {
+    await Promise.all([
+      access("/usr/bin/flock", fsConstants.X_OK),
+      access("/bin/sh", fsConstants.X_OK),
+    ]);
+  } catch {
+    throw new Error("DiscussionBridge requires executable /usr/bin/flock (util-linux) and /bin/sh on Linux");
+  }
+}
 
 export class StateStore {
   constructor(path, { lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
@@ -61,7 +79,7 @@ export class StateStore {
       ? await this.acquireKernelLock()
       : await this.acquirePortableLock();
     try {
-      return await Promise.race([callback(), lease.lost]);
+      return await callback();
     } finally {
       await lease.release();
     }
@@ -71,45 +89,53 @@ export class StateStore {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o750 });
     const seconds = Math.max(0.001, this.lockTimeoutMs / 1000).toFixed(3);
     const child = spawn("/usr/bin/flock", [
-      "--exclusive", "--timeout", seconds, this.lockPath,
+      "--exclusive", "--no-fork", "--timeout", seconds, this.lockPath,
       "/bin/sh", "-c", "printf 'acquired\\n'; cat >/dev/null",
     ], { stdio: ["pipe", "pipe", "pipe"] });
+    let acquired = false;
     let releasing = false;
     let stderr = "";
     child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-1024); });
     await new Promise((resolve, reject) => {
       let stdout = "";
+      let settled = false;
+      const rejectHandshake = (error) => {
+        if (settled) return;
+        settled = true;
+        child.stdout.off("data", onData);
+        reject(error);
+      };
       const onData = (chunk) => {
         stdout += chunk;
         if (!stdout.includes("\n")) return;
-        cleanup();
-        if (stdout.trim() === "acquired") resolve();
-        else reject(new Error("Invalid DiscussionBridge state lock handshake"));
+        if (stdout.trim() !== "acquired") {
+          rejectHandshake(new Error("Invalid DiscussionBridge state lock handshake"));
+          return;
+        }
+        acquired = true;
+        settled = true;
+        child.stdout.off("data", onData);
+        resolve();
       };
       const onExit = (code, signal) => {
-        cleanup();
-        reject(new Error(code === 1
+        const error = new Error(code === 1 && !acquired
           ? "Timed out waiting for DiscussionBridge state lock"
-          : `DiscussionBridge state lock failed (${code ?? signal}): ${stderr.trim()}`));
+          : `DiscussionBridge state lock ${acquired ? "exited unexpectedly" : "failed"} (${code ?? signal}): ${stderr.trim()}`);
+        if (!acquired) rejectHandshake(error);
+        else if (!releasing) failStopAfterKernelLockLoss(error);
       };
-      const onError = (error) => { cleanup(); reject(error); };
-      const cleanup = () => {
-        child.stdout.off("data", onData);
-        child.off("exit", onExit);
-        child.off("error", onError);
+      const onError = (error) => {
+        if (!acquired) rejectHandshake(error);
+        else if (!releasing) failStopAfterKernelLockLoss(error);
       };
-      child.stdout.on("data", onData);
+      // Ownership-loss monitoring is live before the handshake can be accepted.
+      // There is no listener-transition window in which helper exit can be missed.
       child.once("exit", onExit);
       child.once("error", onError);
-    });
-    const lost = new Promise((_, reject) => {
-      child.once("error", reject);
-      child.once("exit", (code, signal) => {
-        if (!releasing) reject(new Error(`DiscussionBridge state lock exited unexpectedly (${code ?? signal}): ${stderr.trim()}`));
-      });
+      child.stdout.on("data", onData);
     });
     return {
-      lost,
+      pid: child.pid,
       release: async () => {
         releasing = true;
         child.stdin.end();
@@ -133,7 +159,6 @@ export class StateStore {
           await link(candidate, this.lockPath);
           await unlink(candidate);
           return {
-            lost: new Promise(() => undefined),
             release: () => this.releasePortableLock({ handle, token }),
           };
         } catch (error) {
