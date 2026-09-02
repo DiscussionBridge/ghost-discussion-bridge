@@ -1,15 +1,17 @@
-import { dirname } from "node:path";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { link, mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
+import { dirname } from "node:path";
+import { link, mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 const LOCK_WAIT_MS = 25;
 const LOCK_TIMEOUT_MS = 120_000;
 
 export class StateStore {
-  constructor(path) {
+  constructor(path, { lockTimeoutMs = LOCK_TIMEOUT_MS } = {}) {
     this.path = path;
     this.lockPath = `${path}.lock`;
+    this.lockTimeoutMs = lockTimeoutMs;
     this.tail = Promise.resolve();
   }
 
@@ -55,34 +57,85 @@ export class StateStore {
   }
 
   async withLock(callback) {
-    const lease = await this.acquireLock();
+    const lease = process.platform === "linux"
+      ? await this.acquireKernelLock()
+      : await this.acquirePortableLock();
     try {
-      return await callback();
+      return await Promise.race([callback(), lease.lost]);
     } finally {
-      await this.releaseLock(lease);
+      await lease.release();
     }
   }
 
-  async acquireLock() {
+  async acquireKernelLock() {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o750 });
-    const deadline = Date.now() + LOCK_TIMEOUT_MS;
+    const seconds = Math.max(0.001, this.lockTimeoutMs / 1000).toFixed(3);
+    const child = spawn("/usr/bin/flock", [
+      "--exclusive", "--timeout", seconds, this.lockPath,
+      "/bin/sh", "-c", "printf 'acquired\\n'; cat >/dev/null",
+    ], { stdio: ["pipe", "pipe", "pipe"] });
+    let releasing = false;
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-1024); });
+    await new Promise((resolve, reject) => {
+      let stdout = "";
+      const onData = (chunk) => {
+        stdout += chunk;
+        if (!stdout.includes("\n")) return;
+        cleanup();
+        if (stdout.trim() === "acquired") resolve();
+        else reject(new Error("Invalid DiscussionBridge state lock handshake"));
+      };
+      const onExit = (code, signal) => {
+        cleanup();
+        reject(new Error(code === 1
+          ? "Timed out waiting for DiscussionBridge state lock"
+          : `DiscussionBridge state lock failed (${code ?? signal}): ${stderr.trim()}`));
+      };
+      const onError = (error) => { cleanup(); reject(error); };
+      const cleanup = () => {
+        child.stdout.off("data", onData);
+        child.off("exit", onExit);
+        child.off("error", onError);
+      };
+      child.stdout.on("data", onData);
+      child.once("exit", onExit);
+      child.once("error", onError);
+    });
+    const lost = new Promise((_, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code, signal) => {
+        if (!releasing) reject(new Error(`DiscussionBridge state lock exited unexpectedly (${code ?? signal}): ${stderr.trim()}`));
+      });
+    });
+    return {
+      lost,
+      release: async () => {
+        releasing = true;
+        child.stdin.end();
+        if (child.exitCode === null) await new Promise((resolve) => child.once("exit", resolve));
+        if (child.exitCode !== 0) throw new Error(`DiscussionBridge state lock release failed (${child.exitCode})`);
+      },
+    };
+  }
+
+  async acquirePortableLock() {
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o750 });
+    const deadline = Date.now() + this.lockTimeoutMs;
     while (Date.now() < deadline) {
       const token = randomUUID();
       const candidate = `${this.lockPath}.${process.pid}.${token}.candidate`;
       const handle = await open(candidate, "wx", 0o600);
       try {
-        const owner = {
-          token,
-          pid: process.pid,
-          process_start: await processStartToken(process.pid),
-          acquired_at: new Date().toISOString(),
-        };
-        await handle.writeFile(`${JSON.stringify(owner)}\n`, "utf8");
+        await handle.writeFile(`${JSON.stringify({ token, pid: process.pid })}\n`, "utf8");
         await handle.sync();
         try {
           await link(candidate, this.lockPath);
           await unlink(candidate);
-          return { handle, token };
+          return {
+            lost: new Promise(() => undefined),
+            release: () => this.releasePortableLock({ handle, token }),
+          };
         } catch (error) {
           if (error.code !== "EEXIST") throw error;
         }
@@ -93,111 +146,21 @@ export class StateStore {
       }
       await handle.close();
       await unlink(candidate).catch(() => undefined);
-      const owner = await this.lockOwner();
-      if (await staleOwner(owner)) {
-        await this.quarantineLock(owner);
-        continue;
-      }
       await delay(LOCK_WAIT_MS);
     }
     throw new Error("Timed out waiting for DiscussionBridge state lock");
   }
 
-  async releaseLock(lease) {
+  async releasePortableLock({ handle, token }) {
     try {
       const [held, current, owner] = await Promise.all([
-        lease.handle.stat(),
-        stat(this.lockPath),
-        this.lockOwner(),
+        handle.stat(), stat(this.lockPath), readFile(this.lockPath, "utf8").then(JSON.parse),
       ]);
-      if (held.dev !== current.dev || held.ino !== current.ino || owner?.token !== lease.token) return;
-      const released = `${this.lockPath}.released.${lease.token}`;
-      await rename(this.lockPath, released);
-      await rm(released, { force: true });
+      if (held.dev === current.dev && held.ino === current.ino && owner?.token === token) await unlink(this.lockPath);
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     } finally {
-      await lease.handle.close();
+      await handle.close();
     }
-  }
-
-  async quarantineLock(expected) {
-    const quarantined = `${this.lockPath}.stale.${randomUUID()}`;
-    try {
-      await rename(this.lockPath, quarantined);
-    } catch (error) {
-      if (error.code === "ENOENT") return false;
-      throw error;
-    }
-    const moved = await lockOwnerAt(quarantined);
-    if (!sameOwner(expected, moved)) {
-      try {
-        await link(quarantined, this.lockPath);
-      } catch (error) {
-        if (error.code !== "EEXIST") throw error;
-      }
-      await rm(quarantined, { force: true });
-      return false;
-    }
-    await rm(quarantined, { force: true });
-    return true;
-  }
-
-  async lockOwner() {
-    return lockOwnerAt(this.lockPath);
-  }
-}
-
-async function lockOwnerAt(path) {
-  try {
-    const info = await stat(path);
-    const parsed = JSON.parse(await readFile(path, "utf8"));
-    if (!Number.isSafeInteger(parsed?.pid) || parsed.pid <= 0) return { malformed: true, mtimeMs: info.mtimeMs };
-    return { ...parsed, mtimeMs: info.mtimeMs };
-  } catch (error) {
-    if (error.code === "ENOENT") return null;
-    try {
-      return { malformed: true, mtimeMs: (await stat(path)).mtimeMs };
-    } catch (statError) {
-      if (statError.code === "ENOENT") return null;
-      throw statError;
-    }
-  }
-}
-
-async function staleOwner(owner) {
-  if (!owner) return false;
-  if (owner.malformed) return Date.now() - owner.mtimeMs >= 5_000;
-  if (!processExists(owner.pid)) return true;
-  if (!owner.process_start) return false;
-  const currentStart = await processStartToken(owner.pid);
-  return currentStart !== null && currentStart !== owner.process_start;
-}
-
-function sameOwner(expected, actual) {
-  if (!expected || !actual) return expected === actual;
-  if (expected.malformed || actual.malformed) return expected.malformed === actual.malformed && expected.mtimeMs === actual.mtimeMs;
-  return expected.token === actual.token && expected.pid === actual.pid && expected.process_start === actual.process_start;
-}
-
-async function processStartToken(pid) {
-  if (process.platform !== "linux") return null;
-  try {
-    const value = await readFile(`/proc/${pid}/stat`, "utf8");
-    const close = value.lastIndexOf(")");
-    if (close < 0) return null;
-    const fields = value.slice(close + 2).trim().split(/\s+/);
-    return fields[19] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function processExists(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code === "EPERM";
   }
 }

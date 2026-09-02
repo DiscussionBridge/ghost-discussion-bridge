@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, unlink, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,11 +35,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.1\.0-alpha\.32/);
+  assert.match(script, /0\.1\.0-alpha\.33/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.32", "0.1.0-alpha.23"));
-  assert.match(upgraded, /0\.1\.0-alpha\.32/);
+  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.33", "0.1.0-alpha.23"));
+  assert.match(upgraded, /0\.1\.0-alpha\.33/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.23/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -90,7 +90,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.32");
+  assert.equal(record.adapter_version, "0.1.0-alpha.33");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -312,60 +312,54 @@ test("separate Ghost processes retain webhook, publication, and presentation ide
   assert.equal(state.presentations["presentation-overlap"].writer, "presentations");
 });
 
-test("a dead process lock is recovered after restart", async () => {
+test("portable fallback holder cannot unlink a replacement lock during release", { skip: process.platform === "linux" }, async () => {
   const cfg = await config();
-  await writeFile(`${cfg.stateFile}.lock`, `${JSON.stringify({ token: "dead", pid: 2_147_483_647, process_start: null })}\n`);
-  const store = new StateStore(cfg.stateFile);
-  await store.update(async (state) => {
-    state.posts.restart = { recovered: true };
-  });
-  assert.equal((await store.read()).posts.restart.recovered, true);
-});
-
-test("simultaneous stale reclaimers cannot remove a successor lock", async () => {
-  const cfg = await config();
-  await writeFile(`${cfg.stateFile}.lock`, `${JSON.stringify({ token: "dead", pid: 2_147_483_647, process_start: null })}\n`);
-  const first = new StateStore(cfg.stateFile);
-  const second = new StateStore(cfg.stateFile);
-  await Promise.all([
-    first.update(async (state) => { state.posts.first = { retained: true }; }),
-    second.update(async (state) => { state.presentations.second = { retained: true }; }),
-  ]);
-  const state = await first.read();
-  assert.equal(state.posts.first.retained, true);
-  assert.equal(state.presentations.second.retained, true);
-});
-
-test("a holder cannot unlink a replacement lock during release", async () => {
-  const cfg = await config();
-  const store = new StateStore(cfg.stateFile);
-  const lease = await store.acquireLock();
+  const store = new StateStore(cfg.stateFile, { lockTimeoutMs: 1_000 });
+  const lease = await store.acquirePortableLock();
   await unlink(`${cfg.stateFile}.lock`);
-  const replacement = { token: "replacement", pid: process.pid, process_start: null };
+  const replacement = { token: "replacement", pid: process.pid };
   await writeFile(`${cfg.stateFile}.lock`, `${JSON.stringify(replacement)}\n`);
-  await store.releaseLock(lease);
+  await lease.release();
   assert.equal(JSON.parse(await readFile(`${cfg.stateFile}.lock`, "utf8")).token, "replacement");
   await unlink(`${cfg.stateFile}.lock`);
 });
 
-test("old empty and malformed locks recover without manual repair", async () => {
-  for (const contents of ["", "not-json"]) {
-    const cfg = await config();
-    await writeFile(`${cfg.stateFile}.lock`, contents);
-    const old = new Date(Date.now() - 60_000);
-    await utimes(`${cfg.stateFile}.lock`, old, old);
-    const store = new StateStore(cfg.stateFile);
-    await store.update(async (state) => { state.posts.recovered = { contents }; });
-    assert.equal((await store.read()).posts.recovered.contents, contents);
-  }
+test("kernel advisory locking ignores malformed lock-file contents", { skip: process.platform !== "linux" }, async () => {
+  const cfg = await config();
+  await writeFile(`${cfg.stateFile}.lock`, "not-json");
+  const store = new StateStore(cfg.stateFile);
+  await store.update(async (state) => { state.posts.recovered = { retained: true }; });
+  assert.equal((await store.read()).posts.recovered.retained, true);
 });
 
-test("a crash before publishing lock metadata leaves no blocking lock", async () => {
+test("kernel advisory lock times out without entering a live critical section", { skip: process.platform !== "linux" }, async () => {
   const cfg = await config();
-  await writeFile(`${cfg.stateFile}.lock.999.abandoned.candidate`, "");
-  const store = new StateStore(cfg.stateFile);
-  await store.update(async (state) => { state.posts.afterCrash = { retained: true }; });
-  assert.equal((await store.read()).posts.afterCrash.retained, true);
+  const holder = new StateStore(cfg.stateFile);
+  const lease = await holder.acquireKernelLock();
+  const contender = new StateStore(cfg.stateFile, { lockTimeoutMs: 100 });
+  await assert.rejects(contender.update(async (state) => { state.posts.forbidden = true; }), /Timed out waiting/);
+  await lease.release();
+  assert.equal((await holder.read()).posts.forbidden, undefined);
+});
+
+test("kernel releases a crashed holder before two waiting contenders enter", { skip: process.platform !== "linux" }, async () => {
+  const cfg = await config();
+  const holderScript = fileURLToPath(new URL("./state-lock-holder.mjs", import.meta.url));
+  const stateStore = new URL("../src/state-store.mjs", import.meta.url);
+  const marker = `${cfg.stateFile}.holder-ready`;
+  const holder = execFile(process.execPath, [holderScript, stateStore.href, cfg.stateFile, marker]);
+  for (let attempt = 0; attempt < 200; attempt++) {
+    try { await readFile(marker); break; } catch { await new Promise((resolve) => setTimeout(resolve, 10)); }
+  }
+  assert.equal(await readFile(marker, "utf8"), "ready\n");
+  const writer = fileURLToPath(new URL("./state-writer.mjs", import.meta.url));
+  const first = execFileAsync(process.execPath, [writer, stateStore.href, cfg.stateFile, "posts", "after-crash-one", "20"]);
+  const second = execFileAsync(process.execPath, [writer, stateStore.href, cfg.stateFile, "presentations", "after-crash-two", "0"]);
+  holder.kill("SIGKILL");
+  await Promise.all([first, second]);
+  const state = await new StateStore(cfg.stateFile).read();
+  assert.equal(state.posts["after-crash-one"].writer, "posts");
+  assert.equal(state.presentations["after-crash-two"].writer, "presentations");
 });
 
 function publicationRecord(overrides = {}) {
@@ -409,6 +403,6 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.32");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.33");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
