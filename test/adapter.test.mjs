@@ -31,7 +31,7 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
 });
 
-test("demo page navigation adds Read more without duplicating the stock section", async () => {
+test("demo navigation adds Read more and the complete community footer", async () => {
   const navigation = await readFile(new URL("../demo/ghost-demo-navigation.js", import.meta.url), "utf8");
   assert.match(navigation, /page-template/);
   assert.match(navigation, /heading\.textContent\?\.trim\(\) === "Read more"/);
@@ -40,6 +40,14 @@ test("demo page navigation adds Read more without duplicating the stock section"
   assert.match(navigation, /page-ghost-demos/);
   assert.match(navigation, /discussionbridge-demo-index/);
   assert.match(navigation, /\.gh-footer/);
+  assert.match(navigation, /data-discussionbridge-social-links/);
+  assert.match(navigation, /https:\/\/forum\.discussionbridge\.dev\//);
+  assert.match(navigation, /https:\/\/bsky\.app\/profile\/discussionbridge\.bsky\.social/);
+  assert.match(navigation, /https:\/\/discord\.gg\/Y7SRQAxKq/);
+  assert.match(navigation, /https:\/\/mastodon\.social\/@DiscussionBridge/);
+  assert.match(navigation, /https:\/\/www\.reddit\.com\/r\/DiscussionBridge\//);
+  assert.match(navigation, /https:\/\/www\.youtube\.com\/@DiscussionBridge/);
+  assert.match(navigation, /X · planned/);
   assert.match(navigation, /\/from-the-bridge\//);
   assert.match(navigation, /\/ghost-simple-comments\//);
   assert.match(navigation, /\/ghost-full-comments\//);

@@ -1,4 +1,43 @@
 (() => {
+  const footer = document.querySelector(".gh-footer-inner");
+  if (footer && !footer.querySelector("[data-discussionbridge-social-links]")) {
+    const style = document.createElement("style");
+    style.setAttribute("data-discussionbridge-social-style", "");
+    style.textContent = ".discussionbridge-social-links{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:.55rem .85rem;margin:0 0 2rem;padding:1.15rem 0;border-block:1px solid color-mix(in srgb,currentColor 16%,transparent)}.discussionbridge-social-links__label{font-weight:700}.discussionbridge-social-links a{color:inherit;font-weight:650;text-decoration:none;text-underline-offset:.22em}.discussionbridge-social-links a:hover{text-decoration:underline}.discussionbridge-social-links__planned{opacity:.62}@media(max-width:600px){.discussionbridge-social-links{align-items:flex-start;justify-content:flex-start}.discussionbridge-social-links__label{flex-basis:100%}}";
+    document.head.appendChild(style);
+
+    const links = [
+      ["Forum", "https://forum.discussionbridge.dev/"],
+      ["Bluesky", "https://bsky.app/profile/discussionbridge.bsky.social"],
+      ["Discord", "https://discord.gg/Y7SRQAxKq"],
+      ["Mastodon", "https://mastodon.social/@DiscussionBridge"],
+      ["Reddit", "https://www.reddit.com/r/DiscussionBridge/"],
+      ["YouTube", "https://www.youtube.com/@DiscussionBridge"],
+    ];
+    const social = document.createElement("nav");
+    social.className = "discussionbridge-social-links";
+    social.setAttribute("data-discussionbridge-social-links", "");
+    social.setAttribute("aria-label", "DiscussionBridge community and social links");
+    const label = document.createElement("span");
+    label.className = "discussionbridge-social-links__label";
+    label.textContent = "Join DiscussionBridge";
+    social.appendChild(label);
+    for (const [name, href] of links) {
+      const link = document.createElement("a");
+      link.href = href;
+      link.textContent = name;
+      link.target = "_blank";
+      link.rel = "noopener";
+      social.appendChild(link);
+    }
+    const planned = document.createElement("span");
+    planned.className = "discussionbridge-social-links__planned";
+    planned.textContent = "X · planned";
+    planned.title = "DiscussionBridge on X is not live yet";
+    social.appendChild(planned);
+    footer.prepend(social);
+  }
+
   if (!document.body.classList.contains("page-template")) return;
   if (document.body.classList.contains("page-ghost-demos") && !document.querySelector("style[data-discussionbridge-demo-index-style]")) {
     const style = document.createElement("style");
