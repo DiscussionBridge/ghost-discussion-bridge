@@ -113,3 +113,17 @@ server, together with its protected credentials, persistent state and narrow
 reverse-proxy routes. Ghost Admin configures the native custom integration; it
 does not install the companion service. See
 [`docs/MANAGED_HOSTING.md`](docs/MANAGED_HOSTING.md) for the exact boundary.
+
+## Demo community footer
+
+`demo/ghost-demo-navigation.js` augments the stock Source theme at runtime; it
+does not edit Ghost's upgrade-owned theme files. In addition to the demo-page
+navigation, it adds one accessible footer collection for the DiscussionBridge
+forum, Bluesky, Discord invite, Mastodon, Reddit and YouTube. X remains visibly
+planned until a real account URL exists.
+
+The live demo serves this exact asset at
+`/discussionbridge/assets/demo-navigation.js`. The 2026-09-01 social build has
+SHA-256 `3d27a8d89c0242b3af7512a3343fa3282b752d0f0e36674b095b11ab4b720936`.
+Its root-protected rollback package is
+`/var/backups/discussionbridge/ghost-social-links-pre-20260901`.
