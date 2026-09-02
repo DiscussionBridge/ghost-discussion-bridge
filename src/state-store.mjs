@@ -1,5 +1,6 @@
 import { dirname } from "node:path";
-import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { link, mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 const LOCK_WAIT_MS = 25;
@@ -54,14 +55,11 @@ export class StateStore {
   }
 
   async withLock(callback) {
-    const handle = await this.acquireLock();
+    const lease = await this.acquireLock();
     try {
       return await callback();
     } finally {
-      await handle.close();
-      await unlink(this.lockPath).catch((error) => {
-        if (error.code !== "ENOENT") throw error;
-      });
+      await this.releaseLock(lease);
     }
   }
 
@@ -69,34 +67,129 @@ export class StateStore {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o750 });
     const deadline = Date.now() + LOCK_TIMEOUT_MS;
     while (Date.now() < deadline) {
+      const token = randomUUID();
+      const candidate = `${this.lockPath}.${process.pid}.${token}.candidate`;
+      const handle = await open(candidate, "wx", 0o600);
       try {
-        const handle = await open(this.lockPath, "wx", 0o600);
-        await handle.writeFile(`${JSON.stringify({ pid: process.pid, acquired_at: new Date().toISOString() })}\n`, "utf8");
+        const owner = {
+          token,
+          pid: process.pid,
+          process_start: await processStartToken(process.pid),
+          acquired_at: new Date().toISOString(),
+        };
+        await handle.writeFile(`${JSON.stringify(owner)}\n`, "utf8");
         await handle.sync();
-        return handle;
-      } catch (error) {
-        if (error.code !== "EEXIST") throw error;
-        const owner = await this.lockOwner();
-        if (owner && !processExists(owner.pid)) {
-          await unlink(this.lockPath).catch((unlinkError) => {
-            if (unlinkError.code !== "ENOENT") throw unlinkError;
-          });
-          continue;
+        try {
+          await link(candidate, this.lockPath);
+          await unlink(candidate);
+          return { handle, token };
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
         }
-        await delay(LOCK_WAIT_MS);
+      } catch (error) {
+        await handle.close();
+        await unlink(candidate).catch(() => undefined);
+        throw error;
       }
+      await handle.close();
+      await unlink(candidate).catch(() => undefined);
+      const owner = await this.lockOwner();
+      if (await staleOwner(owner)) {
+        await this.quarantineLock(owner);
+        continue;
+      }
+      await delay(LOCK_WAIT_MS);
     }
     throw new Error("Timed out waiting for DiscussionBridge state lock");
   }
 
-  async lockOwner() {
+  async releaseLock(lease) {
     try {
-      const parsed = JSON.parse(await readFile(this.lockPath, "utf8"));
-      return Number.isSafeInteger(parsed?.pid) && parsed.pid > 0 ? parsed : null;
+      const [held, current, owner] = await Promise.all([
+        lease.handle.stat(),
+        stat(this.lockPath),
+        this.lockOwner(),
+      ]);
+      if (held.dev !== current.dev || held.ino !== current.ino || owner?.token !== lease.token) return;
+      const released = `${this.lockPath}.released.${lease.token}`;
+      await rename(this.lockPath, released);
+      await rm(released, { force: true });
     } catch (error) {
-      if (error.code === "ENOENT") return null;
-      return null;
+      if (error.code !== "ENOENT") throw error;
+    } finally {
+      await lease.handle.close();
     }
+  }
+
+  async quarantineLock(expected) {
+    const quarantined = `${this.lockPath}.stale.${randomUUID()}`;
+    try {
+      await rename(this.lockPath, quarantined);
+    } catch (error) {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    }
+    const moved = await lockOwnerAt(quarantined);
+    if (!sameOwner(expected, moved)) {
+      try {
+        await link(quarantined, this.lockPath);
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
+      await rm(quarantined, { force: true });
+      return false;
+    }
+    await rm(quarantined, { force: true });
+    return true;
+  }
+
+  async lockOwner() {
+    return lockOwnerAt(this.lockPath);
+  }
+}
+
+async function lockOwnerAt(path) {
+  try {
+    const info = await stat(path);
+    const parsed = JSON.parse(await readFile(path, "utf8"));
+    if (!Number.isSafeInteger(parsed?.pid) || parsed.pid <= 0) return { malformed: true, mtimeMs: info.mtimeMs };
+    return { ...parsed, mtimeMs: info.mtimeMs };
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    try {
+      return { malformed: true, mtimeMs: (await stat(path)).mtimeMs };
+    } catch (statError) {
+      if (statError.code === "ENOENT") return null;
+      throw statError;
+    }
+  }
+}
+
+async function staleOwner(owner) {
+  if (!owner) return false;
+  if (owner.malformed) return Date.now() - owner.mtimeMs >= 5_000;
+  if (!processExists(owner.pid)) return true;
+  if (!owner.process_start) return false;
+  const currentStart = await processStartToken(owner.pid);
+  return currentStart !== null && currentStart !== owner.process_start;
+}
+
+function sameOwner(expected, actual) {
+  if (!expected || !actual) return expected === actual;
+  if (expected.malformed || actual.malformed) return expected.malformed === actual.malformed && expected.mtimeMs === actual.mtimeMs;
+  return expected.token === actual.token && expected.pid === actual.pid && expected.process_start === actual.process_start;
+}
+
+async function processStartToken(pid) {
+  if (process.platform !== "linux") return null;
+  try {
+    const value = await readFile(`/proc/${pid}/stat`, "utf8");
+    const close = value.lastIndexOf(")");
+    if (close < 0) return null;
+    const fields = value.slice(close + 2).trim().split(/\s+/);
+    return fields[19] ?? null;
+  } catch {
+    return null;
   }
 }
 
