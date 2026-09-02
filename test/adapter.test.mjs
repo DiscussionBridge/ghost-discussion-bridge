@@ -42,12 +42,13 @@ test("demo navigation adds Read more and the complete community footer", async (
   assert.match(navigation, /\.gh-footer/);
   assert.match(navigation, /data-discussionbridge-social-links/);
   assert.match(navigation, /https:\/\/forum\.discussionbridge\.dev\//);
+  assert.match(navigation, /https:\/\/github\.com\/DiscussionBridge/);
   assert.match(navigation, /https:\/\/bsky\.app\/profile\/discussionbridge\.bsky\.social/);
   assert.match(navigation, /https:\/\/discord\.gg\/Y7SRQAxKq/);
   assert.match(navigation, /https:\/\/mastodon\.social\/@DiscussionBridge/);
   assert.match(navigation, /https:\/\/www\.reddit\.com\/r\/DiscussionBridge\//);
   assert.match(navigation, /https:\/\/www\.youtube\.com\/@DiscussionBridge/);
-  assert.match(navigation, /\["X", "#"/);
+  assert.match(navigation, /\["X", "https:\/\/x\.com\/DiscussBridge"/);
   assert.match(navigation, /createElementNS\("http:\/\/www\.w3\.org\/2000\/svg", "svg"\)/);
   assert.match(navigation, /\/from-the-bridge\//);
   assert.match(navigation, /\/ghost-simple-comments\//);

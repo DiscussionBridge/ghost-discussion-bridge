@@ -119,12 +119,12 @@ does not install the companion service. See
 `demo/ghost-demo-navigation.js` augments the stock Source theme at runtime; it
 does not edit Ghost's upgrade-owned theme files. In addition to the demo-page
 navigation, it adds one accessible footer collection for the DiscussionBridge
-forum, Bluesky, Discord invite, Mastodon, Reddit and YouTube. X remains visibly
-planned until a real account URL exists.
+forum, GitHub organization, Bluesky, Discord invite, Mastodon, Reddit, X and
+YouTube.
 
 The live demo serves this exact asset at
-`/discussionbridge/assets/demo-navigation.js`. The 2026-09-01 social build has
-SHA-256 `3d27a8d89c0242b3af7512a3343fa3282b752d0f0e36674b095b11ab4b720936`.
+`/discussionbridge/assets/demo-navigation.js`. Its current exact SHA-256 is
+recorded after each deployed demo update.
 Its root-protected rollback package is
 `/var/backups/discussionbridge/ghost-social-links-pre-20260901`.
 The stock Ghost defaults that linked X and Facebook to Ghost's own accounts
