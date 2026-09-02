@@ -1,8 +1,8 @@
 import { loadConfig } from "./config.mjs";
 import { GhostAdminClient } from "./ghost-admin-client.mjs";
+import { PRODUCT_VERSION } from "./version.mjs";
 import { pathToFileURL } from "node:url";
 
-const ASSET_VERSION = "0.1.0-alpha.27";
 const COMMENTS_BOOTSTRAP_PATTERN = /<script data-discussionbridge-comments-bootstrap>[\s\S]*?<\/script>/u;
 const COMMENTS_BOOTSTRAP = `<script data-discussionbridge-comments-bootstrap>
 (() => {
@@ -32,7 +32,7 @@ const COMMENTS_BOOTSTRAP = `<script data-discussionbridge-comments-bootstrap>
     scriptParent = host;
   }
   const loader = document.createElement("script");
-  loader.src = "/discussionbridge/assets/loader.js?v=${ASSET_VERSION}";
+  loader.src = "/discussionbridge/assets/loader.js?v=${PRODUCT_VERSION}";
   loader.defer = true;
   scriptParent.appendChild(loader);
 })();

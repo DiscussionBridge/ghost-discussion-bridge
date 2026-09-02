@@ -1,3 +1,5 @@
+import { PRODUCT_VERSION } from "./version.mjs";
+
 const MAX_BYTES = 65_536;
 const MAX_CONTENT_HTML_BYTES = 48 * 1024;
 const MAX_SOURCE_AUTHORS = 20;
@@ -186,7 +188,7 @@ export function ghostRecord(payload, config, correlationId) {
     published: true,
     visibility: "unlisted",
     adapter_id: "ghost-discussion-bridge",
-    adapter_version: "0.1.0-alpha.23",
+    adapter_version: PRODUCT_VERSION,
     correlation_id: correlationId,
     ...authorship,
     ...(config.lane ? { lane: config.lane } : {}),

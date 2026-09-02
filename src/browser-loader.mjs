@@ -124,6 +124,24 @@ function installDiscussionStyles() {
   }
 }
 
+function installBridgeCredit(target) {
+  const existing = target.nextElementSibling;
+  if (existing?.matches(".discussionbridge-credit")) return;
+  const credit = document.createElement("footer");
+  credit.className = "discussionbridge-credit";
+  credit.setAttribute("aria-label", "DiscussionBridge credit");
+  const prefix = document.createElement("span");
+  prefix.className = "discussionbridge-credit__prefix";
+  prefix.textContent = "Connected by";
+  const brand = document.createElement("a");
+  brand.className = "discussionbridge-credit__brand";
+  brand.href = "https://discussionbridge.dev/";
+  brand.rel = "nofollow";
+  brand.textContent = "DiscussionBridge";
+  credit.append(prefix, " ", brand);
+  target.after(credit);
+}
+
 function installInteractiveDiscussion(target, record, addHeader = true, sourcePresentation = false) {
   if (!target || !Number.isSafeInteger(record.topic_id) || record.topic_id <= 0) throw new Error("Invalid discussion identity");
   const topicUrl = new URL(record.topic_url);
@@ -142,6 +160,7 @@ function installInteractiveDiscussion(target, record, addHeader = true, sourcePr
     target.before(header);
   }
   installDiscussionStyles();
+  installBridgeCredit(target);
   target.id = "discourse-comments";
   window.DiscourseEmbed = {
     discourseUrl: forumOrigin.href,
@@ -229,6 +248,7 @@ for (const target of document.querySelectorAll("[data-discussionbridge-comments]
       header.append(heading, link);
       target.before(header);
       installDiscussionStyles();
+      installBridgeCredit(target);
       target.id = "discourse-comments";
       window.DiscourseEmbed = { discourseUrl: `${record.forum_origin}/`, topicId: record.topic_id };
       const script = document.createElement("script");
