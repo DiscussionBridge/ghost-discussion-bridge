@@ -47,7 +47,8 @@ test("demo navigation adds Read more and the complete community footer", async (
   assert.match(navigation, /https:\/\/mastodon\.social\/@DiscussionBridge/);
   assert.match(navigation, /https:\/\/www\.reddit\.com\/r\/DiscussionBridge\//);
   assert.match(navigation, /https:\/\/www\.youtube\.com\/@DiscussionBridge/);
-  assert.match(navigation, /X · planned/);
+  assert.match(navigation, /\["X", "#"/);
+  assert.match(navigation, /createElementNS\("http:\/\/www\.w3\.org\/2000\/svg", "svg"\)/);
   assert.match(navigation, /\/from-the-bridge\//);
   assert.match(navigation, /\/ghost-simple-comments\//);
   assert.match(navigation, /\/ghost-full-comments\//);
