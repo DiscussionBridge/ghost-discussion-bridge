@@ -35,11 +35,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.1\.0-alpha\.37/);
+  assert.match(script, /0\.1\.0-alpha\.38/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.37", "0.1.0-alpha.23"));
-  assert.match(upgraded, /0\.1\.0-alpha\.37/);
+  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.38", "0.1.0-alpha.23"));
+  assert.match(upgraded, /0\.1\.0-alpha\.38/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.23/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -116,7 +116,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.37");
+  assert.equal(record.adapter_version, "0.1.0-alpha.38");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -531,7 +531,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
   const records = [publicationRecord(), publicationRecord({ resource_id: "22222222-2222-4222-8222-222222222222", bindings: [{ ...publicationRecord().bindings[0], native_materialization: false }] })];
-  const bridge = { records: async () => ({ bridge_records: records, pagination: { page: 1, pages: 1 } }) };
+  const bridge = { records: async () => ({ bridge_records: records, pagination: { page: 1, pages: 1, total: 2, snapshot: "snapshot-one" } }) };
   const created = [];
   const remote = [];
   const ghost = {
@@ -548,14 +548,31 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.37");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.38");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
+});
+
+test("publication sync rejects snapshot drift and duplicate resource identities", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  let page = 0;
+  const drifting = { records: async () => {
+    page += 1;
+    return { bridge_records: [publicationRecord()], pagination: { page, pages: 2, total: 2, snapshot: page === 1 ? "one" : "two" } };
+  } };
+  await assert.rejects(() => syncPublications(cfg, store, drifting, {}), /changed during synchronization/);
+  page = 0;
+  const repeated = { records: async () => {
+    page += 1;
+    return { bridge_records: [publicationRecord()], pagination: { page, pages: 2, total: 2, snapshot: "one" } };
+  } };
+  await assert.rejects(() => syncPublications(cfg, store, repeated, {}), /duplicate or invalid resource identity/);
 });
 
 test("lost Ghost create response adopts the exact resource marker without a second create", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
-  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
   const remote = [];
   let creates = 0;
   const ghost = {
@@ -580,7 +597,7 @@ test("expired pending intent is recovered by marker lookup after restart", async
   await store.update(async (state) => {
     state.publications[publication.resourceId] = { state: "pending", operation_id: "dead-process", pending_until: 0, canonical_url: publication.destination, revision: publication.revision, adapter_version: PRODUCT_VERSION };
   });
-  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
   let creates = 0;
   const ghost = {
     findByResource: async () => [{ id: "c".repeat(24), slug: publication.slug, url: publication.destination, html: publication.html, tags: [{ name: publication.resourceTag }, { name: publication.revisionTag }], updated_at: "2026-09-02T00:00:00.000Z" }],
@@ -598,7 +615,7 @@ test("expired create intent without a marker fails closed instead of creating ag
   await store.update(async (state) => {
     state.publications[publication.resourceId] = { state: "pending", operation_id: "lost-process", pending_until: 0, canonical_url: publication.destination, revision: publication.revision, adapter_version: PRODUCT_VERSION };
   });
-  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
   let creates = 0;
   const ghost = {
     findByResource: async () => [],
@@ -614,7 +631,7 @@ test("multiple Ghost resource markers fail closed before create", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
   const publication = nativePublication(publicationRecord(), cfg);
-  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
   let creates = 0;
   const ghost = {
     findByResource: async () => [
@@ -639,7 +656,7 @@ test("lost Ghost update response adopts the exact new revision marker", async ()
     html: originalPublication.html, tags: [{ name: originalPublication.resourceTag }, { name: originalPublication.revisionTag }],
     updated_at: "2026-09-02T00:00:00.000Z",
   }];
-  const bridgeFor = (record) => ({ records: async () => ({ bridge_records: [record], pagination: { page: 1, pages: 1 } }) });
+  const bridgeFor = (record) => ({ records: async () => ({ bridge_records: [record], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) });
   const ghost = {
     findByResource: async () => remote,
     create: async () => { throw new Error("must not create"); },
@@ -663,7 +680,7 @@ test("resource lookup without the exact marker fails closed", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
   const publication = nativePublication(publicationRecord(), cfg);
-  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
   const ghost = {
     findByResource: async () => [{ id: "1".repeat(24), slug: publication.slug, url: publication.destination, html: publication.html, tags: [{ name: "#unrelated" }] }],
     create: async () => { throw new Error("must not create"); },
@@ -675,7 +692,7 @@ test("resource lookup without the exact marker fails closed", async () => {
 
 test("concurrent publication sync creates one Ghost post", async () => {
   const cfg = await config();
-  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
   const remote = [];
   let creates = 0;
   const ghost = {

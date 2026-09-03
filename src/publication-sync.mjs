@@ -64,13 +64,26 @@ export async function syncPublications(config, store, bridge, ghost, { pendingLe
   const summary = { created: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0, errors: [] };
   const candidates = [];
   let page = 1;
+  let snapshot; let expectedPages; let expectedTotal;
+  const seenResources = new Set();
   for (;;) {
-    const response = await bridge.records(page);
-    if (!Array.isArray(response?.bridge_records) || !Number.isSafeInteger(response?.pagination?.pages) || response.pagination.pages < 1 || response.pagination.pages > 10_000 || response.pagination.page !== page) throw new Error("Invalid publication feed");
+    const response = await bridge.records(page, snapshot);
+    if (!Array.isArray(response?.bridge_records) || !Number.isSafeInteger(response?.pagination?.pages) || response.pagination.pages < 1 || response.pagination.pages > 10_000 || response.pagination.page !== page || !Number.isSafeInteger(response.pagination.total) || response.pagination.total < 0 || typeof response.pagination.snapshot !== "string" || !response.pagination.snapshot || response.pagination.snapshot.length > 8_192) throw new Error("Invalid publication feed");
+    if (page === 1) {
+      snapshot = response.pagination.snapshot; expectedPages = response.pagination.pages; expectedTotal = response.pagination.total;
+    } else if (response.pagination.snapshot !== snapshot || response.pagination.pages !== expectedPages || response.pagination.total !== expectedTotal) {
+      throw new Error("Publication feed changed during synchronization");
+    }
+    for (const record of response.bridge_records) {
+      const id = typeof record?.resource_id === "string" ? record.resource_id.toLowerCase() : "";
+      if (!UUID.test(id) || seenResources.has(id)) throw new Error("Publication feed contains a duplicate or invalid resource identity");
+      seenResources.add(id);
+    }
     candidates.push(...response.bridge_records);
     if (page >= response.pagination.pages) break;
     page += 1;
   }
+  if (seenResources.size !== expectedTotal) throw new Error("Publication feed did not produce its complete unique census");
   for (const record of candidates) {
       let publication;
       try { publication = nativePublication(record, config); } catch (error) { summary.failed += 1; summary.errors.push({ resource_id: UUID.test(record?.resource_id ?? "") ? record.resource_id : null, reason: error.message }); continue; }

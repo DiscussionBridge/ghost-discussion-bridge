@@ -67,9 +67,12 @@ export class BridgeClient {
     return this.request("GET", `/discussion-bridge/v1/bridge-records/${encodeURIComponent(resourceId)}.json`);
   }
 
-  async records(page = 1) {
+  async records(page = 1, snapshot) {
     if (!Number.isSafeInteger(page) || page < 1 || page > 10_000) throw new Error("Invalid records page");
-    return this.request("GET", `/discussion-bridge/v1/bridge-records.json?page=${page}`);
+    if (snapshot !== undefined && (typeof snapshot !== "string" || !snapshot || snapshot.length > 8_192)) throw new Error("Invalid records snapshot");
+    const query = new URLSearchParams({ page: String(page) });
+    if (snapshot) query.set("snapshot", snapshot);
+    return this.request("GET", `/discussion-bridge/v1/bridge-records.json?${query}`);
   }
 
   async publicTopic(topicId) {

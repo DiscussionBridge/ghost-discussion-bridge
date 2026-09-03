@@ -1,12 +1,12 @@
 {
   "name": "ghost-discussion-bridge",
-  "version": "0.1.0-alpha.37",
+  "version": "0.1.0-alpha.38",
   "lockfileVersion": 3,
   "requires": true,
   "packages": {
     "": {
       "name": "ghost-discussion-bridge",
-      "version": "0.1.0-alpha.37",
+      "version": "0.1.0-alpha.38",
       "dependencies": {
         "sanitize-html": "2.17.7"
       },
