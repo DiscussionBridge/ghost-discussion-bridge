@@ -73,7 +73,7 @@ async function renderSimpleDiscussion(client, topicId, forumOrigin) {
   const [topic, poweredBy] = await Promise.all([client.publicTopic(topicId), poweredByDiscourse(client, forumOrigin).catch(() => false)]);
   const postStream = topic?.post_stream;
   if (!postStream || !Array.isArray(postStream.posts) || !Array.isArray(postStream.stream)) throw new Error("Invalid topic response");
-  const targetIds = postStream.stream.slice(1, MAX_SIMPLE_REPLIES);
+  const targetIds = postStream.stream.slice(1, MAX_SIMPLE_REPLIES + 1);
   if (targetIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) throw new Error("Invalid topic response");
   const postsById = new Map(postStream.posts.filter((post) => Number.isSafeInteger(post?.id) && post.id > 0).map((post) => [post.id, post]));
   const missing = targetIds.filter((id) => !postsById.has(id));

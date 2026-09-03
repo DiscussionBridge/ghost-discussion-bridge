@@ -35,11 +35,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.1\.0-alpha\.36/);
+  assert.match(script, /0\.1\.0-alpha\.37/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.36", "0.1.0-alpha.23"));
-  assert.match(upgraded, /0\.1\.0-alpha\.36/);
+  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.37", "0.1.0-alpha.23"));
+  assert.match(upgraded, /0\.1\.0-alpha\.37/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.23/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -83,6 +83,32 @@ async function config() {
   return loadConfig({ DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example", DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567", DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: join(root, "secret"), DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example", DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE: join(root, "webhook"), DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE: join(root, "admin-key"), DISCUSSIONBRIDGE_STATE_FILE: join(root, "state.json"), DISCUSSIONBRIDGE_LANE: "ghost-alpha" });
 }
 
+test("connection secret and lane match the receiver admission grammar", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ghost-discussionbridge-config-"));
+  const secretFile = join(root, "secret");
+  const webhookFile = join(root, "webhook");
+  const adminKeyFile = join(root, "admin-key");
+  await writeFile(webhookFile, "w".repeat(32));
+  await writeFile(adminKeyFile, `${"a".repeat(24)}:${"b".repeat(64)}`);
+  const environment = {
+    DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example",
+    DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567",
+    DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: secretFile,
+    DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example",
+    DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE: webhookFile,
+    DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE: adminKeyFile,
+    DISCUSSIONBRIDGE_STATE_FILE: join(root, "state.json"),
+    DISCUSSIONBRIDGE_LANE: "ghost-alpha",
+  };
+  await writeFile(secretFile, "s".repeat(31));
+  assert.throws(() => loadConfig(environment), /connection secret/);
+  await writeFile(secretFile, "é".repeat(129));
+  assert.throws(() => loadConfig(environment), /connection secret/);
+  await writeFile(secretFile, "s".repeat(32));
+  assert.throws(() => loadConfig({ ...environment, DISCUSSIONBRIDGE_LANE: "Bad Lane" }), /lane/);
+  assert.equal(loadConfig(environment).lane, "ghost-alpha");
+});
+
 test("maps an authoritative published Ghost post and its authors", async () => {
   const cfg = await config();
   const record = ghostRecord({ post: { current: { id: "abc123", title: "Ghost article", html: "<p>Useful Ghost content.</p>", url: "https://ghost.example/ghost-article/", status: "published", tags: [{ name: "#discussionbridge", slug: "hash-discussionbridge" }], authors: [{ id: "author-1", name: "Primary Writer", url: "https://ghost.example/author/primary/" }, { id: "author-2", name: "Editor" }], primary_author: { id: "author-1" } } } }, cfg, "correlation");
@@ -90,7 +116,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.36");
+  assert.equal(record.adapter_version, "0.1.0-alpha.37");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -285,6 +311,26 @@ test("simple comments fetch bounded missing batches and disclose replies after f
   assert.match(html, /class="discussionbridge-credit__brand" href="https:\/\/discussionbridge\.dev\/"/);
   assert.doesNotMatch(html, /<script>|bad\(\)/);
   assert.doesNotMatch(html, /Reply 1/);
+});
+
+test("simple comments render the exact fiftieth reply", async () => {
+  const posts = Array.from({ length: 51 }, (_, index) => ({
+    id: index + 1,
+    post_number: index + 1,
+    username: `user${index + 1}`,
+    name: `Demo ${index + 1}`,
+    cooked: `<p>Reply ${index + 1}</p>`,
+    created_at: "2026-09-02T12:00:00.000Z",
+    avatar_template: `/user_avatar/forum.example/user${index + 1}/{size}/1.png`,
+  }));
+  const client = {
+    publicTopic: async () => ({ slug: "ghost-demo", post_stream: { stream: posts.map(({ id }) => id), posts: posts.slice(0, 1) } }),
+    publicPoweredByDiscourse: async () => true,
+    publicTopicPosts: async (_topicId, ids) => ({ post_stream: { posts: posts.filter(({ id }) => ids.includes(id)) } }),
+  };
+  const html = await renderSimpleDiscussion(client, 42, "https://forum.example");
+  assert.match(html, /Reply 51/);
+  assert.doesNotMatch(html, /Showing the first 50 comments/);
 });
 
 test("separate StateStore instances retain concurrent identities", async () => {
@@ -498,7 +544,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.36");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.37");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 
@@ -639,8 +685,8 @@ test("concurrent publication sync creates one Ghost post", async () => {
     },
   };
   const [first, second] = await Promise.all([
-    syncPublications(cfg, new StateStore(cfg.stateFile), bridge, ghost, { pendingLeaseMs: 200 }),
-    syncPublications(cfg, new StateStore(cfg.stateFile), bridge, ghost, { pendingLeaseMs: 200 }),
+    syncPublications(cfg, new StateStore(cfg.stateFile), bridge, ghost, { pendingLeaseMs: 2_000 }),
+    syncPublications(cfg, new StateStore(cfg.stateFile), bridge, ghost, { pendingLeaseMs: 2_000 }),
   ]);
   assert.equal(creates, 1);
   assert.equal(first.created + second.created, 1);
