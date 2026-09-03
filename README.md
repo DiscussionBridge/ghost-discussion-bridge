@@ -95,6 +95,18 @@ ownership still existed and a retry remains idempotent. On non-Linux
 development hosts, the portable hard-link fallback preserves mutual exclusion
 but intentionally does not reclaim locks after a process crash.
 
+Native From Discourse publication uses a durable local intent before calling
+Ghost and places the Bridge Record resource UUID and hashed source revision in
+internal Ghost tags. The readable source revision remains in the generated
+article provenance, but Ghost normalizes that authored HTML and the internal
+tags are the machine identity. A lost create or update response is
+reconciled by that exact marker, canonical URL, slug and source revision before
+local completion is recorded. Concurrent workers wait on the current intent.
+After a crashed create intent expires, exactly one marked Ghost post may be
+adopted; no marker requires operator reconciliation and multiple markers fail
+closed. The adapter never repeats an uncertain create merely because its local
+completion record is missing.
+
 Simple mode presents the forum-controlled official Discourse attribution and
 the independent **Connected by DiscussionBridge** credit as separate lines.
 The latter remains present regardless of the forum-wide Discourse branding

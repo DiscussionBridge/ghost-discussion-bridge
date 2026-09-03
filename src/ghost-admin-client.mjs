@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 
 const MAX_BYTES = 256 * 1024;
+const RESOURCE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function token(apiKey, now = Math.floor(Date.now() / 1000)) {
   const match = /^([a-f0-9]{24}):([a-f0-9]{64})$/iu.exec(apiKey);
@@ -26,6 +27,15 @@ export class GhostAdminClient {
   async get(id) {
     if (!/^[a-f0-9]{24}$/iu.test(id)) throw new Error("Invalid Ghost post ID");
     return (await this.request("GET", `/ghost/api/admin/posts/${id}/?formats=html`)).posts?.[0];
+  }
+
+  async findByResource(resourceId) {
+    if (!RESOURCE_ID.test(resourceId)) throw new Error("Invalid DiscussionBridge resource ID");
+    const tag = `hash-discussionbridge-resource-${resourceId.toLowerCase()}`;
+    const path = `/ghost/api/admin/posts/?filter=${encodeURIComponent(`tag:${tag}`)}&limit=3&formats=html&include=tags`;
+    const posts = (await this.request("GET", path)).posts;
+    if (!Array.isArray(posts)) throw new Error("Invalid Ghost publication resource lookup");
+    return posts;
   }
 
   async update(id, post) {

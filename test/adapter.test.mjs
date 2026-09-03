@@ -35,11 +35,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.1\.0-alpha\.35/);
+  assert.match(script, /0\.1\.0-alpha\.36/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.35", "0.1.0-alpha.23"));
-  assert.match(upgraded, /0\.1\.0-alpha\.35/);
+  const upgraded = mergeCodeInjection(script.replace("0.1.0-alpha.36", "0.1.0-alpha.23"));
+  assert.match(upgraded, /0\.1\.0-alpha\.36/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.23/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -90,7 +90,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.1.0-alpha.35");
+  assert.equal(record.adapter_version, "0.1.0-alpha.36");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -467,6 +467,7 @@ test("native publication requires explicit authority and exact identities", asyn
   const publication = nativePublication(publicationRecord(), cfg);
   assert.equal(publication.slug, "the-bridge-publishes-everywhere");
   assert.equal(publication.revision, "post:149:version:1");
+  assert.match(publication.revisionTag, /^#discussionbridge-revision-[0-9a-f]{64}$/u);
   assert.match(publication.html, /data-discussionbridge-comments="fullInteractive"/);
   assert.match(publication.html, /\/discussionbridge\/assets\/loader\.js/);
   assert.match(publication.html, /Ghost 6\.59\.0/);
@@ -482,12 +483,167 @@ test("publication sync creates once, skips presentation records and exact retry 
   const records = [publicationRecord(), publicationRecord({ resource_id: "22222222-2222-4222-8222-222222222222", bindings: [{ ...publicationRecord().bindings[0], native_materialization: false }] })];
   const bridge = { records: async () => ({ bridge_records: records, pagination: { page: 1, pages: 1 } }) };
   const created = [];
-  const ghost = { create: async (post) => { created.push(post); return { id: "a".repeat(24), slug: post.slug, url: `https://ghost.example/${post.slug}/` }; } };
+  const remote = [];
+  const ghost = {
+    findByResource: async () => remote,
+    create: async (post) => {
+      created.push(post);
+      const result = { ...post, id: "a".repeat(24), url: `https://ghost.example/${post.slug}/`, updated_at: "2026-09-02T00:00:00.000Z" };
+      remote.push(result);
+      return result;
+    },
+  };
   assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 1, updated: 0, unchanged: 0, skipped: 1, failed: 0, errors: [] });
   assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 0, updated: 0, unchanged: 1, skipped: 1, failed: 0, errors: [] });
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.35");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.1.0-alpha.36");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
+});
+
+test("lost Ghost create response adopts the exact resource marker without a second create", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  const remote = [];
+  let creates = 0;
+  const ghost = {
+    findByResource: async () => remote,
+    create: async (post) => {
+      creates += 1;
+      remote.push({ ...post, id: "b".repeat(24), url: `https://ghost.example/${post.slug}/`, updated_at: "2026-09-02T00:00:00.000Z" });
+      throw new Error("response lost");
+    },
+  };
+  assert.equal((await syncPublications(cfg, store, bridge, ghost)).created, 1);
+  assert.equal(creates, 1);
+  assert.equal((await syncPublications(cfg, store, bridge, ghost)).unchanged, 1);
+  assert.equal(creates, 1);
+  assert.equal((await store.read()).publications[publicationRecord().resource_id].ghost_post_id, "b".repeat(24));
+});
+
+test("expired pending intent is recovered by marker lookup after restart", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const publication = nativePublication(publicationRecord(), cfg);
+  await store.update(async (state) => {
+    state.publications[publication.resourceId] = { state: "pending", operation_id: "dead-process", pending_until: 0, canonical_url: publication.destination, revision: publication.revision, adapter_version: PRODUCT_VERSION };
+  });
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  let creates = 0;
+  const ghost = {
+    findByResource: async () => [{ id: "c".repeat(24), slug: publication.slug, url: publication.destination, html: publication.html, tags: [{ name: publication.resourceTag }, { name: publication.revisionTag }], updated_at: "2026-09-02T00:00:00.000Z" }],
+    create: async () => { creates += 1; throw new Error("must not create"); },
+  };
+  assert.equal((await syncPublications(cfg, store, bridge, ghost)).updated, 1);
+  assert.equal(creates, 0);
+  assert.equal((await store.read()).publications[publication.resourceId].ghost_post_id, "c".repeat(24));
+});
+
+test("expired create intent without a marker fails closed instead of creating again", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const publication = nativePublication(publicationRecord(), cfg);
+  await store.update(async (state) => {
+    state.publications[publication.resourceId] = { state: "pending", operation_id: "lost-process", pending_until: 0, canonical_url: publication.destination, revision: publication.revision, adapter_version: PRODUCT_VERSION };
+  });
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  let creates = 0;
+  const ghost = {
+    findByResource: async () => [],
+    create: async () => { creates += 1; },
+  };
+  const result = await syncPublications(cfg, store, bridge, ghost);
+  assert.equal(result.failed, 1);
+  assert.equal(creates, 0);
+  assert.match(result.errors[0].reason, /requires reconciliation/u);
+});
+
+test("multiple Ghost resource markers fail closed before create", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const publication = nativePublication(publicationRecord(), cfg);
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  let creates = 0;
+  const ghost = {
+    findByResource: async () => [
+      { id: "d".repeat(24), slug: publication.slug, url: publication.destination, html: publication.html, tags: [{ name: publication.resourceTag }] },
+      { id: "e".repeat(24), slug: publication.slug, url: publication.destination, html: publication.html, tags: [{ name: publication.resourceTag }] },
+    ],
+    create: async () => { creates += 1; },
+  };
+  const result = await syncPublications(cfg, store, bridge, ghost);
+  assert.equal(result.failed, 1);
+  assert.equal(creates, 0);
+  assert.match(result.errors[0].reason, /Ambiguous/);
+});
+
+test("lost Ghost update response adopts the exact new revision marker", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const original = publicationRecord();
+  const originalPublication = nativePublication(original, cfg);
+  const remote = [{
+    id: "f".repeat(24), slug: originalPublication.slug, url: originalPublication.destination,
+    html: originalPublication.html, tags: [{ name: originalPublication.resourceTag }, { name: originalPublication.revisionTag }],
+    updated_at: "2026-09-02T00:00:00.000Z",
+  }];
+  const bridgeFor = (record) => ({ records: async () => ({ bridge_records: [record], pagination: { page: 1, pages: 1 } }) });
+  const ghost = {
+    findByResource: async () => remote,
+    create: async () => { throw new Error("must not create"); },
+    update: async (_id, post) => {
+      remote[0] = { ...remote[0], ...post, updated_at: "2026-09-02T00:01:00.000Z" };
+      throw new Error("update response lost");
+    },
+  };
+  assert.equal((await syncPublications(cfg, store, bridgeFor(original), ghost)).updated, 1);
+  const changed = publicationRecord({
+    source: { ...original.source, post_version: 2, revision: "post:149:version:2" },
+  });
+  const result = await syncPublications(cfg, store, bridgeFor(changed), ghost);
+  assert.equal(result.updated, 1);
+  assert.equal(result.failed, 0);
+  assert.match(remote[0].html, /data-discussionbridge-revision="post:149:version:2"/u);
+  assert.equal((await store.read()).publications[original.resource_id].revision, "post:149:version:2");
+});
+
+test("resource lookup without the exact marker fails closed", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const publication = nativePublication(publicationRecord(), cfg);
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  const ghost = {
+    findByResource: async () => [{ id: "1".repeat(24), slug: publication.slug, url: publication.destination, html: publication.html, tags: [{ name: "#unrelated" }] }],
+    create: async () => { throw new Error("must not create"); },
+  };
+  const result = await syncPublications(cfg, store, bridge, ghost);
+  assert.equal(result.failed, 1);
+  assert.match(result.errors[0].reason, /marker drift/u);
+});
+
+test("concurrent publication sync creates one Ghost post", async () => {
+  const cfg = await config();
+  const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1 } }) };
+  const remote = [];
+  let creates = 0;
+  const ghost = {
+    findByResource: async () => remote,
+    create: async (post) => {
+      creates += 1;
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      const result = { ...post, id: "2".repeat(24), url: `https://ghost.example/${post.slug}/`, updated_at: "2026-09-02T00:00:00.000Z" };
+      remote.push(result);
+      return result;
+    },
+  };
+  const [first, second] = await Promise.all([
+    syncPublications(cfg, new StateStore(cfg.stateFile), bridge, ghost, { pendingLeaseMs: 200 }),
+    syncPublications(cfg, new StateStore(cfg.stateFile), bridge, ghost, { pendingLeaseMs: 200 }),
+  ]);
+  assert.equal(creates, 1);
+  assert.equal(first.created + second.created, 1);
+  assert.equal(first.unchanged + second.unchanged, 1);
+  assert.equal(first.failed + second.failed, 0);
 });
