@@ -472,11 +472,15 @@ for (const phase of ["before-read", "after-read", "after-write", "after-sync", "
     let helperPid;
     for (let attempt = 0; attempt < 200; attempt++) {
       try {
-        helperPid = Number.parseInt((await readFile(ready, "utf8")).trim(), 10);
-        break;
+        const candidatePid = Number.parseInt((await readFile(ready, "utf8")).trim(), 10);
+        if (Number.isSafeInteger(candidatePid) && candidatePid > 0) {
+          helperPid = candidatePid;
+          break;
+        }
       } catch {
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        // The helper creates and writes this marker asynchronously.
       }
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.ok(helperPid, `transaction helper did not reach ${phase}`);
     process.kill(helperPid, "SIGKILL");
