@@ -1,4 +1,8 @@
-# Ghost DiscussionBridge adapter
+# DiscussionBridge for Ghost
+
+```sh
+git clone https://github.com/DiscussionBridge/ghost-discussion-bridge.git
+```
 
 This is the publishing-side Ghost adapter for the DiscussionBridge Alpha. It
 runs as a small loopback-only Node service beside Ghost.
