@@ -1,6 +1,7 @@
 import katex from "katex";
 import "katex/dist/katex.min.css";
 import mermaid from "mermaid";
+import { isInteractiveCommentsMode, normalizeCommentsMode } from "./comments-mode.mjs";
 
 mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
 
@@ -183,7 +184,7 @@ if (nativeArticle) {
   renderRichContent(nativeArticle).then(() => installContents(nativeArticle));
   if (document.body.classList.contains("tag-hash-discussionbridge-source") && !nativeArticle.querySelector("[data-discussionbridge-comments]")) {
     const discussion = document.createElement("div");
-    discussion.setAttribute("data-discussionbridge-comments", "fullInteractive");
+    discussion.setAttribute("data-discussionbridge-comments", "interactive");
     nativeArticle.appendChild(discussion);
   }
 }
@@ -213,8 +214,8 @@ for (const target of document.querySelectorAll("[data-discussionbridge-resource]
 for (const target of document.querySelectorAll("[data-discussionbridge-comments]")) {
   if (target.dataset.discussionbridgeCommentsMounted === "true") continue;
   target.dataset.discussionbridgeCommentsMounted = "true";
-  const mode = target.getAttribute("data-discussionbridge-comments") || "full";
-  if (!new Set(["simple", "full", "fullInteractive"]).has(mode)) {
+  const mode = normalizeCommentsMode(target.getAttribute("data-discussionbridge-comments") || "full");
+  if (!mode) {
     target.textContent = "Discussion is temporarily unavailable.";
     continue;
   }
@@ -232,7 +233,7 @@ for (const target of document.querySelectorAll("[data-discussionbridge-comments]
   fetch(`/discussionbridge/comments?source=${encodeURIComponent(source.href)}`, { credentials: "same-origin", redirect: "error" })
     .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
     .then((record) => {
-      if (mode === "fullInteractive") {
+      if (isInteractiveCommentsMode(mode)) {
         installInteractiveDiscussion(target, record);
         return;
       }

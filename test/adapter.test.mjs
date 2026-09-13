@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
+import { isInteractiveCommentsMode, normalizeCommentsMode } from "../src/comments-mode.mjs";
 import { ghostAdminToken } from "../src/ghost-admin-client.mjs";
 import { mergeCodeInjection } from "../src/install-rich-content.mjs";
 import { nativePublication, syncPublications } from "../src/publication-sync.mjs";
@@ -243,9 +244,17 @@ test("Ghost comment source is exact-origin and canonical", () => {
   assert.throws(() => exactGhostSource("https://ghost.example/article/#comments", "https://ghost.example"));
 });
 
-test("reader loader offers simple, standard, and fullInteractive mapped comments", async () => {
+test("comments mode uses Interactive publicly while accepting the historical token", () => {
+  assert.equal(normalizeCommentsMode("interactive"), "interactive");
+  assert.equal(normalizeCommentsMode("fullInteractive"), "interactive");
+  assert.equal(isInteractiveCommentsMode("interactive"), true);
+  assert.equal(isInteractiveCommentsMode("fullInteractive"), true);
+  assert.equal(normalizeCommentsMode("bridge"), null);
+});
+
+test("reader loader offers simple, full, and Interactive mapped comments", async () => {
   const loader = await readFile(new URL("../src/browser-loader.mjs", import.meta.url), "utf8");
-  assert.match(loader, /\["simple", "full", "fullInteractive"\]/);
+  assert.match(loader, /normalizeCommentsMode/);
   assert.match(loader, /\/discussionbridge\/simple\?source=/);
   assert.match(loader, /fullApp: true/);
   assert.match(loader, /embedHeight: "800px"/);
@@ -518,7 +527,7 @@ test("native publication requires explicit authority and exact identities", asyn
   assert.equal(publication.slug, "the-bridge-publishes-everywhere");
   assert.equal(publication.revision, "post:149:version:1");
   assert.match(publication.revisionTag, /^#discussionbridge-revision-[0-9a-f]{64}$/u);
-  assert.match(publication.html, /data-discussionbridge-comments="fullInteractive"/);
+  assert.match(publication.html, /data-discussionbridge-comments="interactive"/);
   assert.match(publication.html, /\/discussionbridge\/assets\/loader\.js/);
   assert.match(publication.html, /Ghost 6\.59\.0/);
   assert.equal(nativePublication(publicationRecord({ bindings: [{ ...publicationRecord().bindings[0], native_materialization: false }] }), cfg), null);

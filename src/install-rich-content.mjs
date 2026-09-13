@@ -25,7 +25,7 @@ const COMMENTS_BOOTSTRAP = `<script data-discussionbridge-comments-bootstrap>
       ? "simple"
       : document.body.classList.contains("tag-hash-discussionbridge-full")
         ? "full"
-        : "fullInteractive";
+        : "interactive";
     const target = document.createElement("div");
     target.setAttribute("data-discussionbridge-comments", mode);
     host.appendChild(target);

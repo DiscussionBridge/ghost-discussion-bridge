@@ -22,7 +22,7 @@ runs as a small loopback-only Node service beside Ghost.
 - Explicitly registered From Discourse resources are pulled server-side and
   exposed through a same-origin Nginx route as sanitized HTML. The supplied
   loader renders that HTML into an explicit Ghost post placeholder, then adds
-  the same topic's comments-only fullInteractive surface. The imported first
+  the same topic's comments-only Interactive surface. The imported first
   post remains the article and is not repeated in the discussion frame; its
   replies, session and reply controls remain owned by Discourse. A validated
   topic identity is required before either presentation is exposed.
@@ -32,7 +32,7 @@ runs as a small loopback-only Node service beside Ghost.
   ignored. The adapter stores the Discourse post revision and Ghost post ID,
   so an exact retry is unchanged and a later first-post revision updates the
   same Ghost post. The native post carries a source/provenance note and its
-  mapped fullInteractive discussion; it is tagged `#discussionbridge-source`,
+  mapped Interactive discussion; it is tagged `#discussionbridge-source`,
   not the outbound `#discussionbridge` opt-in, preventing a publication loop.
 - Published Ghost posts can render their exact mapped Discourse discussion.
   The same-origin loader resolves the current canonical Ghost URL through the
@@ -43,18 +43,20 @@ runs as a small loopback-only Node service beside Ghost.
   comments. `data-discussionbridge-comments="simple"` selects native bounded
   reply cards with an initial five comments, a **Show more comments** disclosure,
   and a hard 50-reply ceiling before continuing on The Bridge.
-  `data-discussionbridge-comments="fullInteractive"` selects the
+  `data-discussionbridge-comments="interactive"` selects the
   receiving plugin's full-app reader experience in a bounded application
   viewport. The 800px frame and 360px minimum are explicit DiscussionBridge
   defaults shared with the Astro adapter; `dynamicHeight` is disabled so long
   discussions scroll inside the frame instead of growing the host page without
   bound. Ghost does not inherit Discourse's otherwise implicit 600px embed
   default. An empty
-  attribute remains the backwards-compatible `full` mode; every other value
+  attribute remains the backwards-compatible `full` mode. The historical
+  `fullInteractive` token is accepted as a compatibility alias, normalized to
+  `interactive`, and never emitted by new adapter output; every other value
   fails closed.
   The stock Ghost demo's theme-level integration selects the per-post mode from
   internal tags: `#discussionbridge-simple`, `#discussionbridge-full`, or the
-  default `#discussionbridge` fullInteractive path. The mode marker belongs to
+  default `#discussionbridge` Interactive path. The mode marker belongs to
   the theme integration rather than authored article HTML.
   The loader renders a native page-level `Discussion` heading and an
   `Open discussion` link from the validated stored topic URL before the
@@ -132,7 +134,7 @@ The Ghost post contains an HTML card such as:
 A To Discourse post can render its mapped replies with:
 
 ```html
-<div data-discussionbridge-comments="fullInteractive"></div>
+<div data-discussionbridge-comments="interactive"></div>
 <script defer src="/discussionbridge/assets/loader.js"></script>
 ```
 
