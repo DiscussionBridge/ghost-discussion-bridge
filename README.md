@@ -75,18 +75,53 @@ file. The service binds only to loopback. It does not implement Ghost-to-forum
 edit/delete synchronization, forum deletion propagation, or a generic control
 plane.
 
+## Operator status
+
+Set `DISCUSSIONBRIDGE_OPERATOR_PASSWORD_FILE` to a root-managed credential file
+readable by the adapter service. The reverse proxy may then expose the exact
+`/discussionbridge/operator/` and
+`/discussionbridge/operator/synchronize` routes over HTTPS. Sign in with the
+fixed username `discussionbridge` and the separate operator password.
+
+The protected page shows the latest durable synchronization totals, current
+Ghost-to-Discourse mappings, Discourse-to-Ghost publications, attention states,
+bounded failure reasons and source/destination links. Its synchronization
+button is an exact-origin POST and shares the same durable operation path as
+`npm run sync:publications`. The page never displays the receiver credential,
+Ghost Admin API key, webhook secret or operator password.
+
+For a separately hosted companion, set `DISCUSSIONBRIDGE_OPERATOR_ORIGIN` to
+the operator page's public HTTPS origin. It defaults to the Ghost origin for a
+same-host installation. This makes the status boundary portable without
+introducing shared hosting, tenancy or a DiscussionBridge control plane.
+
 ## Required environment
 
 `DISCUSSIONBRIDGE_SERVER_URL`, `DISCUSSIONBRIDGE_CONNECTION_ID`,
 `DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE`, `DISCUSSIONBRIDGE_GHOST_ORIGIN`,
 `DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE`, and
 `DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE`, and
-`DISCUSSIONBRIDGE_STATE_FILE`. `DISCUSSIONBRIDGE_PORT` defaults to `8792` and
-`DISCUSSIONBRIDGE_LANE` is optional.
+`DISCUSSIONBRIDGE_STATE_FILE`. `DISCUSSIONBRIDGE_OPERATOR_PASSWORD_FILE`
+enables the protected operator surface. `DISCUSSIONBRIDGE_OPERATOR_ORIGIN` is
+optional and defaults to the Ghost origin. `DISCUSSIONBRIDGE_PORT` defaults to
+`8792` and `DISCUSSIONBRIDGE_LANE` is optional.
 
 Only posts carrying Ghost's internal `#discussionbridge` tag are eligible.
 Configure only the `post.published` event; ordinary published edits are not an
 implemented synchronization surface.
+
+When DiscussionBridge supplies the article discussion, open Ghost Admin at
+**Settings → Membership** and set **Who can comment on posts?** to **Nobody**.
+Otherwise Ghost's separate Members comment section is rendered alongside the
+DiscussionBridge/Discourse discussion and incorrectly suggests that Ghost
+membership participates in the Bridge identity or reply flow.
+
+Run `npm run install:rich-content` after the service is configured. Ghost 6.59
+allows a custom-integration token to read Code Injection but denies the write.
+When that boundary is encountered, the command returns
+`manual_required: true`, the exact Ghost Admin Site Footer location and the
+versioned bootstrap to paste. It does not report the denial as an unexplained
+generic installation failure.
 
 On Linux, the adapter requires executable `/usr/bin/flock` from `util-linux`
 and its current Node runtime. Service and command entry points verify those

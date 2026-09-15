@@ -18,6 +18,11 @@ function httpsOrigin(name, environment) {
   return parsed.origin;
 }
 
+function optionalHttpsOrigin(name, environment, fallback) {
+  const value = (environment[name] ?? "").trim();
+  return value ? httpsOrigin(name, { ...environment, [name]: value }) : fallback;
+}
+
 function protectedValue(path) {
   const value = readFileSync(path, "utf8").trim();
   if (value.length < 24 || value.length > 512 || /[\r\n\0]/u.test(value)) {
@@ -34,10 +39,14 @@ export function loadConfig(environment = process.env) {
   const lane = (environment.DISCUSSIONBRIDGE_LANE ?? "").trim();
   if (lane && !/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(lane)) throw new Error("Invalid lane");
   const connectionSecret = protectedValue(required("DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE", environment));
+  const operatorPasswordFile = (environment.DISCUSSIONBRIDGE_OPERATOR_PASSWORD_FILE ?? "").trim();
+  const operatorPassword = operatorPasswordFile ? protectedValue(operatorPasswordFile) : null;
   if (Buffer.byteLength(connectionSecret) < 32 || Buffer.byteLength(connectionSecret) > 256) throw new Error("Invalid DiscussionBridge connection secret");
+  const serverUrl = httpsOrigin("DISCUSSIONBRIDGE_SERVER_URL", environment);
+  const ghostOrigin = httpsOrigin("DISCUSSIONBRIDGE_GHOST_ORIGIN", environment);
   return {
-    serverUrl: httpsOrigin("DISCUSSIONBRIDGE_SERVER_URL", environment),
-    ghostOrigin: httpsOrigin("DISCUSSIONBRIDGE_GHOST_ORIGIN", environment),
+    serverUrl,
+    ghostOrigin,
     connectionId,
     connectionSecret,
     webhookSecret: protectedValue(required("DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE", environment)),
@@ -45,5 +54,7 @@ export function loadConfig(environment = process.env) {
     stateFile: required("DISCUSSIONBRIDGE_STATE_FILE", environment),
     lane,
     port,
+    operatorPassword,
+    operatorOrigin: optionalHttpsOrigin("DISCUSSIONBRIDGE_OPERATOR_ORIGIN", environment, ghostOrigin),
   };
 }

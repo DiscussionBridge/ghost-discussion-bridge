@@ -46,16 +46,29 @@ export function mergeCodeInjection(value) {
     : [current, COMMENTS_BOOTSTRAP].filter(Boolean).join("\n");
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const client = new GhostAdminClient(loadConfig());
+export async function installRichContent(client) {
   const payload = await client.request("GET", "/ghost/api/admin/settings/");
   const settings = Array.isArray(payload?.settings) ? payload.settings : [];
   const setting = settings.find((item) => item?.key === "codeinjection_foot");
   const next = mergeCodeInjection(setting?.value);
-  if (next === (setting?.value ?? "").trim()) {
-    process.stdout.write('{"updated":false}\n');
-  } else {
+  if (next === (setting?.value ?? "").trim()) return { updated: false, manual_required: false };
+  try {
     await client.request("PUT", "/ghost/api/admin/settings/", { settings: [{ key: "codeinjection_foot", value: next }] });
-    process.stdout.write('{"updated":true}\n');
+    return { updated: true, manual_required: false };
+  } catch (error) {
+    if (error?.status !== 403) throw error;
+    return {
+      updated: false,
+      manual_required: true,
+      location: "Ghost Admin → Settings → Advanced → Code injection → Site Footer",
+      code: COMMENTS_BOOTSTRAP,
+    };
   }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const client = new GhostAdminClient(loadConfig());
+  const result = await installRichContent(client);
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (result.manual_required) process.exitCode = 2;
 }

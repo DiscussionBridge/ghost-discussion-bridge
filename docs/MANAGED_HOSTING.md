@@ -15,10 +15,13 @@ injection cannot provide the complete two-direction DiscussionBridge profile.
 ## What the publisher does in Ghost
 
 1. Creates or authorizes one custom integration named **DiscussionBridge**.
-2. Opts a post into publication with the internal `#discussionbridge` tag.
-3. Uses an explicit resource placeholder when presenting a From Discourse
+2. Opens **Settings → Membership** and sets **Who can comment on posts?** to
+   **Nobody** when DiscussionBridge owns the article discussion surface. This
+   prevents Ghost Members comments from appearing below the Discourse frame.
+3. Opts a post into publication with the internal `#discussionbridge` tag.
+4. Uses an explicit resource placeholder when presenting a From Discourse
    record.
-4. Manages ordinary Ghost content, authors and themes normally.
+5. Manages ordinary Ghost content, authors and themes normally.
 
 ## What the server operator or managed host operates
 
@@ -31,6 +34,8 @@ injection cannot provide the complete two-direction DiscussionBridge profile.
   secret, readable only by the adapter identity;
 - durable adapter state outside Ghost's versioned application tree;
 - service lifecycle, logs, health monitoring, package upgrades and rollback;
+- a dedicated operator-password file and the protected status/synchronization
+  routes, with exact-origin POST enforcement;
 - backup coverage for the adapter state and configuration; and
 - one non-built-in Ghost theme or supported code-injection boundary for the
   credential-free loader when From Discourse presentation is enabled.
@@ -40,6 +45,20 @@ the active Ghost version tree, membership, authentication, newsletters or
 mail. A Ghost upgrade must preserve the custom integration, webhook, adapter
 service, state and presentation hook.
 
+The operator page is part of the companion service rather than Ghost Admin.
+For a same-host install it is exposed at
+`/discussionbridge/operator/` on the Ghost origin. A remote companion may use a
+different HTTPS origin declared through `DISCUSSIONBRIDGE_OPERATOR_ORIGIN`.
+The same adapter runtime, protected credential files, durable state and
+synchronization logic are used in either arrangement. Multi-tenant hosting,
+account provisioning and billing remain outside the current Alpha boundary.
+
+Ghost's custom-integration API token may be unable to write Code Injection.
+When `npm run install:rich-content` reports `manual_required: true`, the host or
+publisher pastes the returned bootstrap into **Ghost Admin → Settings →
+Advanced → Code injection → Site Footer**. This is a Ghost permission boundary,
+not permission to broaden the Admin API key or edit an upgrade-owned theme.
+
 ## Required routing
 
 The public origin exposes only:
@@ -48,6 +67,8 @@ The public origin exposes only:
 - `GET /discussionbridge/presentation/{resource-id}` for registered public
   presentations;
 - `GET /discussionbridge/assets/loader.js`; and
+- authenticated `GET /discussionbridge/operator/` plus exact-origin `POST
+  /discussionbridge/operator/synchronize`; and
 - an optional provider-only health probe that is not presented as a public
   administrative API.
 
@@ -66,8 +87,8 @@ questions:
    hosted Ghost site?
 3. Can it route the exact `/discussionbridge/` paths without changing Ghost's
    remaining routes?
-4. Can it store three protected values: Bridge connection secret, Ghost
-   webhook secret and the nonsecret connection configuration?
+4. Can it store four protected values: Bridge connection secret, Ghost
+   webhook secret, Ghost Admin API key and the separate operator password?
 5. Can it persist and back up the adapter state across Ghost upgrades?
 6. Can it install a supported custom theme or code-injection loader for From
    Discourse presentation?

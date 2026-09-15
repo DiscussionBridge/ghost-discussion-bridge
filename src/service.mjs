@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import sanitizeHtml from "sanitize-html";
 import { BridgeClient, ghostRecord } from "./bridge-client.mjs";
+import { operatorAuthorized, renderOperatorPage } from "./operator-surface.mjs";
 
 const MAX_WEBHOOK_BYTES = 131_072;
 const INITIAL_SIMPLE_REPLIES = 5;
@@ -11,6 +12,7 @@ const BRANDING_CACHE_MS = 10 * 60 * 1000;
 const brandingCache = new Map();
 const discourseWordmark = readFileSync(new URL("../assets/discourse-wordmark.svg", import.meta.url), "utf8");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const OPERATOR_HEADERS = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'", "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
 function validGhostSignature(header, rawBody, secret, now = Date.now()) {
   if (typeof header !== "string") return false;
@@ -122,10 +124,35 @@ async function poweredByDiscourse(client, forumOrigin) {
   try { return await value; } catch (error) { brandingCache.delete(forumOrigin); throw error; }
 }
 
-export function buildServer(config, store, client = new BridgeClient(config)) {
+export function buildServer(config, store, client = new BridgeClient(config), operations = {}) {
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://127.0.0.1");
+      if (url.pathname === "/operator" || url.pathname === "/operator/" || url.pathname === "/operator/synchronize") {
+        if (!config.operatorPassword || !operatorAuthorized(request.headers.authorization, config.operatorPassword)) {
+          response.writeHead(401, { "WWW-Authenticate": 'Basic realm="DiscussionBridge operator", charset="UTF-8"', "Cache-Control": "no-store" });
+          return response.end("Authentication required");
+        }
+        if ((url.pathname === "/operator" || url.pathname === "/operator/") && request.method === "GET") {
+          response.writeHead(200, OPERATOR_HEADERS);
+          return response.end(renderOperatorPage(config, await store.read()));
+        }
+        if (url.pathname === "/operator/synchronize" && request.method === "POST") {
+          if (request.headers.origin !== config.operatorOrigin) return json(response, 403, { error: "origin_denied" });
+          if (typeof operations.synchronize !== "function") throw new Error("Publication synchronization is unavailable");
+          let summary; let notice; let status = 200;
+          try {
+            summary = await operations.synchronize();
+            notice = `Synchronization complete: ${summary.created} created, ${summary.updated} updated, ${summary.unchanged} already current, ${summary.failed} failed.`;
+          } catch {
+            status = 502;
+            notice = "Synchronization failed. Review the protected failure details below, correct the cause, and retry.";
+          }
+          response.writeHead(status, OPERATOR_HEADERS);
+          return response.end(renderOperatorPage(config, await store.read(), notice));
+        }
+        return json(response, 405, { error: "method_not_allowed" });
+      }
       if (request.method === "POST" && url.pathname === "/webhooks/ghost") {
         if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return json(response, 415, { error: "content_type" });
         const rawBody = await body(request);

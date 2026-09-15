@@ -67,7 +67,11 @@ export class GhostAdminClient {
     if (bytes.byteLength > MAX_BYTES) throw new Error("Ghost response too large");
     let data;
     try { data = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new Error("Invalid Ghost response JSON"); }
-    if (!response.ok) throw new Error("Ghost Admin rejected the request");
+    if (!response.ok) {
+      const error = new Error("Ghost Admin rejected the request");
+      error.status = response.status;
+      throw error;
+    }
     return data;
   }
 }

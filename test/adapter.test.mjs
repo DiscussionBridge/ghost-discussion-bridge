@@ -11,7 +11,8 @@ import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
 import { isInteractiveCommentsMode, normalizeCommentsMode } from "../src/comments-mode.mjs";
 import { ghostAdminToken } from "../src/ghost-admin-client.mjs";
-import { mergeCodeInjection } from "../src/install-rich-content.mjs";
+import { installRichContent, mergeCodeInjection } from "../src/install-rich-content.mjs";
+import { runPublicationSynchronization } from "../src/publication-operations.mjs";
 import { nativePublication, syncPublications } from "../src/publication-sync.mjs";
 import { assertStateStoreRuntimePrerequisites, StateStore } from "../src/state-store.mjs";
 import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignature } from "../src/service.mjs";
@@ -36,14 +37,28 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.2\.0-alpha\.20/);
+  assert.match(script, /0\.2\.0-alpha\.21/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.20", "0.1.0-alpha.23"));
-  assert.match(upgraded, /0\.2\.0-alpha\.20/);
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.21", "0.1.0-alpha.23"));
+  assert.match(upgraded, /0\.2\.0-alpha\.21/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.23/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
+});
+
+test("rich-content installation reports Ghost's manual Site Footer boundary", async () => {
+  const client = { request: async (method) => {
+    if (method === "GET") return { settings: [{ key: "codeinjection_foot", value: "<meta name=existing>" }] };
+    const error = new Error("Ghost Admin rejected the request");
+    error.status = 403;
+    throw error;
+  } };
+  const result = await installRichContent(client);
+  assert.equal(result.updated, false);
+  assert.equal(result.manual_required, true);
+  assert.match(result.location, /Code injection → Site Footer/u);
+  assert.match(result.code, /data-discussionbridge-comments-bootstrap/u);
 });
 
 test("demo navigation adds Read more and the complete community footer", async () => {
@@ -81,7 +96,8 @@ async function config() {
   await writeFile(join(root, "secret"), "s".repeat(32));
   await writeFile(join(root, "webhook"), "w".repeat(32));
   await writeFile(join(root, "admin-key"), `${"a".repeat(24)}:${"b".repeat(64)}`);
-  return loadConfig({ DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example", DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567", DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: join(root, "secret"), DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example", DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE: join(root, "webhook"), DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE: join(root, "admin-key"), DISCUSSIONBRIDGE_STATE_FILE: join(root, "state.json"), DISCUSSIONBRIDGE_LANE: "ghost-alpha" });
+  await writeFile(join(root, "operator-password"), "o".repeat(32));
+  return loadConfig({ DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example", DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567", DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: join(root, "secret"), DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example", DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE: join(root, "webhook"), DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE: join(root, "admin-key"), DISCUSSIONBRIDGE_STATE_FILE: join(root, "state.json"), DISCUSSIONBRIDGE_LANE: "ghost-alpha", DISCUSSIONBRIDGE_OPERATOR_PASSWORD_FILE: join(root, "operator-password") });
 }
 
 test("connection secret and lane match the receiver admission grammar", async () => {
@@ -117,7 +133,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.20");
+  assert.equal(record.adapter_version, "0.2.0-alpha.21");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -178,6 +194,48 @@ test("webhook resolves once and persists no secret", async () => {
     const state = JSON.stringify(await store.read());
     assert.match(state, /ghost-post:abc/);
     assert.doesNotMatch(state, new RegExp("s{32}|w{32}"));
+  } finally { server.close(); }
+});
+
+test("operator status is protected, credential-free, and synchronizes with an exact origin", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  await store.write({
+    version: 1,
+    posts: { "ghost-post:abc": { resource_id: "11111111-1111-4111-8111-111111111111", topic_id: 42, topic_url: "https://forum.example/t/ghost/42", canonical_url: "https://ghost.example/article/", outcome: "resolved", updated_at: "2026-09-15T00:00:00.000Z" } },
+    presentations: {},
+    publications: { "22222222-2222-4222-8222-222222222222": { ghost_post_id: "a".repeat(24), canonical_url: "https://ghost.example/native/", revision: "post:2:version:1", topic_id: 43, topic_url: "https://forum.example/t/native/43", state: "complete", synchronized_at: "2026-09-15T00:01:00.000Z" } },
+  });
+  let synchronizations = 0;
+  const server = buildServer(cfg, store, {}, { synchronize: async () => { synchronizations += 1; return { created: 0, updated: 0, unchanged: 1, skipped: 1, failed: 0, errors: [] }; } });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const authorization = `Basic ${Buffer.from(`discussionbridge:${"o".repeat(32)}`).toString("base64")}`;
+    assert.equal((await fetch(`${origin}/operator/`)).status, 401);
+    assert.equal((await fetch(`${origin}/operator/`, { headers: { Authorization: "Basic bad" } })).status, 401);
+    const page = await fetch(`${origin}/operator/`, { headers: { Authorization: authorization } });
+    assert.equal(page.status, 200);
+    assert.equal(page.headers.get("cache-control"), "no-store");
+    const html = await page.text();
+    assert.match(html, /Ghost → Discourse mappings/u);
+    assert.match(html, /Discourse → Ghost publications/u);
+    assert.match(html, /ghost-post:abc/u);
+    assert.match(html, /Synchronize publications/u);
+    assert.doesNotMatch(html, new RegExp(`${"s".repeat(32)}|${"w".repeat(32)}|${"a".repeat(24)}:${"b".repeat(64)}|${"o".repeat(32)}`));
+    assert.equal((await fetch(`${origin}/operator/synchronize`, { method: "POST", headers: { Authorization: authorization, Origin: "https://evil.example" } })).status, 403);
+    const synchronized = await fetch(`${origin}/operator/synchronize`, { method: "POST", headers: { Authorization: authorization, Origin: cfg.operatorOrigin } });
+    assert.equal(synchronized.status, 200);
+    assert.match(await synchronized.text(), /0 created, 0 updated, 1 already current, 0 failed/u);
+    assert.equal(synchronizations, 1);
+
+    const failedServer = buildServer(cfg, store, {}, { synchronize: async () => { throw new Error("bounded failure"); } });
+    await new Promise((resolve) => failedServer.listen(0, "127.0.0.1", resolve));
+    try {
+      const failure = await fetch(`http://127.0.0.1:${failedServer.address().port}/operator/synchronize`, { method: "POST", headers: { Authorization: authorization, Origin: cfg.operatorOrigin } });
+      assert.equal(failure.status, 502);
+      assert.match(await failure.text(), /Synchronization failed.*protected failure details/su);
+    } finally { failedServer.close(); }
   } finally { server.close(); }
 });
 
@@ -557,8 +615,26 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.20");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.21");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
+});
+
+test("publication operation persists operator-visible totals and redacts protected values", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const bridge = { records: async () => ({ bridge_records: [], pagination: { page: 1, pages: 1, total: 0, snapshot: "snapshot-one" } }) };
+  assert.deepEqual(await runPublicationSynchronization(cfg, store, bridge, {}), { created: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0, errors: [] });
+  let state = await store.read();
+  assert.equal(state.publication_sync.state, "complete");
+  assert.equal(state.publication_sync.summary.failed, 0);
+
+  const failing = { records: async () => { throw new Error(`Failure ${cfg.connectionSecret}`); } };
+  await assert.rejects(() => runPublicationSynchronization(cfg, store, failing, {}), /Failure/u);
+  state = await store.read();
+  assert.equal(state.publication_sync.state, "attention");
+  assert.equal(state.publication_sync.summary.failed, 1);
+  assert.equal(state.publication_sync.summary.errors[0].reason, "Failure [redacted]");
+  assert.doesNotMatch(JSON.stringify(state), new RegExp(cfg.connectionSecret));
 });
 
 test("publication sync rejects snapshot drift and duplicate resource identities", async () => {
@@ -634,6 +710,7 @@ test("expired create intent without a marker fails closed instead of creating ag
   assert.equal(result.failed, 1);
   assert.equal(creates, 0);
   assert.match(result.errors[0].reason, /requires reconciliation/u);
+  assert.equal((await store.read()).publications[publication.resourceId].state, "attention");
 });
 
 test("multiple Ghost resource markers fail closed before create", async () => {

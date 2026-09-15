@@ -19,6 +19,14 @@ function escape(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
+function failureReason(error, config) {
+  let reason = typeof error?.message === "string" ? error.message : "Publication synchronization failed";
+  for (const secret of [config.connectionSecret, config.webhookSecret, config.ghostAdminApiKey, config.operatorPassword]) {
+    if (typeof secret === "string" && secret) reason = reason.replaceAll(secret, "[redacted]");
+  }
+  return reason.replace(/[\u0000-\u001f\u007f]/gu, " ").trim().slice(0, 240) || "Publication synchronization failed";
+}
+
 export function nativePublication(record, config) {
   if (!record || typeof record !== "object") throw new Error("Invalid publication record");
   const bindings = Array.isArray(record.bindings) ? record.bindings.filter((item) => item?.role === "presentation" && item?.state === "active") : [];
@@ -136,7 +144,15 @@ export async function syncPublications(config, store, bridge, ghost, { pendingLe
           state.publications[publication.resourceId] = { ghost_post_id: result.id, canonical_url: publication.destination, revision: publication.revision, adapter_version: PRODUCT_VERSION, topic_id: publication.topicId, topic_url: publication.topicUrl, resource_tag: publication.resourceTag, state: "complete", synchronized_at: new Date().toISOString() };
         });
         summary[existing || claim.prior?.ghost_post_id ? "updated" : "created"] += 1;
-      } catch (error) { summary.failed += 1; summary.errors.push({ resource_id: publication.resourceId, reason: error.message }); }
+      } catch (error) {
+        const reason = failureReason(error, config);
+        await store.update(async (state) => {
+          const current = state.publications[publication.resourceId];
+          if (current?.operation_id === operationId) state.publications[publication.resourceId] = { ...current, state: "attention", failure_reason: reason, failed_at: new Date().toISOString() };
+        });
+        summary.failed += 1;
+        summary.errors.push({ resource_id: publication.resourceId, reason });
+      }
   }
   return summary;
 }
