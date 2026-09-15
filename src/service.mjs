@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import sanitizeHtml from "sanitize-html";
 import { BridgeClient, ghostRecord } from "./bridge-client.mjs";
-import { operatorAuthorized, renderOperatorPage } from "./operator-surface.mjs";
+import { operatorAuthorized, operatorCsrfValid, renderOperatorPage } from "./operator-surface.mjs";
 
 const MAX_WEBHOOK_BYTES = 131_072;
 const INITIAL_SIMPLE_REPLIES = 5;
@@ -25,12 +25,12 @@ function validGhostSignature(header, rawBody, secret, now = Date.now()) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-async function body(request) {
+async function body(request, maximum = MAX_WEBHOOK_BYTES) {
   const chunks = [];
   let length = 0;
   for await (const chunk of request) {
     length += chunk.length;
-    if (length > MAX_WEBHOOK_BYTES) throw new Error("Webhook too large");
+    if (length > maximum) throw new Error("Request body too large");
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
@@ -138,7 +138,10 @@ export function buildServer(config, store, client = new BridgeClient(config), op
           return response.end(renderOperatorPage(config, await store.read()));
         }
         if (url.pathname === "/operator/synchronize" && request.method === "POST") {
-          if (request.headers.origin !== config.operatorOrigin) return json(response, 403, { error: "origin_denied" });
+          if (request.headers.origin && request.headers.origin !== config.operatorOrigin) return json(response, 403, { error: "origin_denied" });
+          if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/x-www-form-urlencoded")) return json(response, 415, { error: "content_type" });
+          const form = new URLSearchParams(await body(request, 1024));
+          if (!operatorCsrfValid(form.get("csrf"), config.operatorPassword)) return json(response, 403, { error: "csrf_denied" });
           if (typeof operations.synchronize !== "function") throw new Error("Publication synchronization is unavailable");
           let summary; let notice; let status = 200;
           try {
