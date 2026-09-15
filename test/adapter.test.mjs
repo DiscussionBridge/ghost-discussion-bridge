@@ -37,11 +37,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.2\.0-alpha\.23/);
+  assert.match(script, /0\.2\.0-alpha\.24/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.23", "0.1.0-alpha.99"));
-  assert.match(upgraded, /0\.2\.0-alpha\.23/);
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.24", "0.1.0-alpha.99"));
+  assert.match(upgraded, /0\.2\.0-alpha\.24/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -133,7 +133,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.23");
+  assert.equal(record.adapter_version, "0.2.0-alpha.24");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -227,17 +227,27 @@ test("operator status is protected, credential-free, and synchronizes with a bou
     assert.ok(csrf);
     const headers = { Authorization: authorization, "Content-Type": "application/x-www-form-urlencoded" };
     assert.equal((await fetch(`${origin}/operator/synchronize`, { method: "POST", headers: { ...headers, Origin: "https://browser-supplied.example" }, body: "csrf=invalid" })).status, 403);
-    const synchronized = await fetch(`${origin}/operator/synchronize`, { method: "POST", headers: { ...headers, Origin: "https://browser-supplied.example" }, body: `csrf=${csrf}` });
-    assert.equal(synchronized.status, 200);
-    assert.match(await synchronized.text(), /0 created, 0 updated, 1 already current, 0 failed/u);
+    const synchronized = await fetch(`${origin}/operator/synchronize`, { method: "POST", headers: { ...headers, Origin: "https://browser-supplied.example" }, body: `csrf=${csrf}`, redirect: "manual" });
+    assert.equal(synchronized.status, 303);
+    assert.equal(synchronized.headers.get("location"), "/discussionbridge/operator/");
+    const noticeCookie = synchronized.headers.get("set-cookie")?.split(";", 1)[0];
+    assert.match(noticeCookie ?? "", /^discussionbridge_operator_notice=/u);
+    const resultPage = await fetch(`${origin}/operator/`, { headers: { Authorization: authorization, Cookie: noticeCookie } });
+    assert.equal(resultPage.status, 200);
+    assert.match(resultPage.headers.get("set-cookie") ?? "", /Max-Age=0/u);
+    assert.match(await resultPage.text(), /0 created, 0 updated, 1 already current, 0 failed/u);
+    const refreshedPage = await fetch(`${origin}/operator/`, { headers: { Authorization: authorization } });
+    assert.doesNotMatch(await refreshedPage.text(), /Synchronization complete:/u);
     assert.equal(synchronizations, 1);
 
     const failedServer = buildServer(cfg, store, {}, { synchronize: async () => { throw new Error("bounded failure"); } });
     await new Promise((resolve) => failedServer.listen(0, "127.0.0.1", resolve));
     try {
-      const failure = await fetch(`http://127.0.0.1:${failedServer.address().port}/operator/synchronize`, { method: "POST", headers, body: `csrf=${csrf}` });
-      assert.equal(failure.status, 502);
-      assert.match(await failure.text(), /Synchronization failed.*protected failure details/su);
+      const failure = await fetch(`http://127.0.0.1:${failedServer.address().port}/operator/synchronize`, { method: "POST", headers, body: `csrf=${csrf}`, redirect: "manual" });
+      assert.equal(failure.status, 303);
+      const failureCookie = failure.headers.get("set-cookie")?.split(";", 1)[0];
+      const failurePage = await fetch(`http://127.0.0.1:${failedServer.address().port}/operator/`, { headers: { Authorization: authorization, Cookie: failureCookie } });
+      assert.match(await failurePage.text(), /Synchronization failed.*protected failure details/su);
     } finally { failedServer.close(); }
   } finally { server.close(); }
 });
@@ -618,7 +628,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.23");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.24");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 

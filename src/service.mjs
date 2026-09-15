@@ -13,6 +13,7 @@ const brandingCache = new Map();
 const discourseWordmark = readFileSync(new URL("../assets/discourse-wordmark.svg", import.meta.url), "utf8");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const OPERATOR_HEADERS = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'", "X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
+const OPERATOR_NOTICE_COOKIE = "discussionbridge_operator_notice";
 
 function validGhostSignature(header, rawBody, secret, now = Date.now()) {
   if (typeof header !== "string") return false;
@@ -39,6 +40,37 @@ async function body(request, maximum = MAX_WEBHOOK_BYTES) {
 function json(response, status, payload) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   response.end(JSON.stringify(payload));
+}
+
+function signedOperatorNotice(notice, password) {
+  const payload = Buffer.from(notice, "utf8").toString("base64url");
+  const signature = createHmac("sha256", password).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function operatorNotice(cookieHeader, password) {
+  if (typeof cookieHeader !== "string" || cookieHeader.length > 4096) return "";
+  const encoded = cookieHeader.split(";").map((item) => item.trim()).find((item) => item.startsWith(`${OPERATOR_NOTICE_COOKIE}=`))?.slice(OPERATOR_NOTICE_COOKIE.length + 1);
+  if (!encoded || encoded.length > 1024) return "";
+  const separator = encoded.lastIndexOf(".");
+  if (separator < 1) return "";
+  const payload = encoded.slice(0, separator);
+  const actual = Buffer.from(encoded.slice(separator + 1));
+  const expected = Buffer.from(createHmac("sha256", password).update(payload).digest("base64url"));
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return "";
+  try {
+    const notice = Buffer.from(payload, "base64url").toString("utf8");
+    return Buffer.byteLength(notice) <= 512 ? notice : "";
+  } catch { return ""; }
+}
+
+function redirectWithOperatorNotice(response, notice, password) {
+  response.writeHead(303, {
+    "Cache-Control": "no-store",
+    Location: "/discussionbridge/operator/",
+    "Set-Cookie": `${OPERATOR_NOTICE_COOKIE}=${signedOperatorNotice(notice, password)}; Path=/discussionbridge/operator/; Max-Age=60; HttpOnly; Secure; SameSite=Strict`,
+  });
+  response.end();
 }
 
 function exactTopicUrl(value, serverOrigin) {
@@ -134,24 +166,23 @@ export function buildServer(config, store, client = new BridgeClient(config), op
           return response.end("Authentication required");
         }
         if ((url.pathname === "/operator" || url.pathname === "/operator/") && request.method === "GET") {
-          response.writeHead(200, OPERATOR_HEADERS);
-          return response.end(renderOperatorPage(config, await store.read()));
+          const notice = operatorNotice(request.headers.cookie, config.operatorPassword);
+          response.writeHead(200, { ...OPERATOR_HEADERS, ...(notice ? { "Set-Cookie": `${OPERATOR_NOTICE_COOKIE}=; Path=/discussionbridge/operator/; Max-Age=0; HttpOnly; Secure; SameSite=Strict` } : {}) });
+          return response.end(renderOperatorPage(config, await store.read(), notice));
         }
         if (url.pathname === "/operator/synchronize" && request.method === "POST") {
           if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/x-www-form-urlencoded")) return json(response, 415, { error: "content_type" });
           const form = new URLSearchParams(await body(request, 1024));
           if (!operatorCsrfValid(form.get("csrf"), config.operatorPassword)) return json(response, 403, { error: "csrf_denied" });
           if (typeof operations.synchronize !== "function") throw new Error("Publication synchronization is unavailable");
-          let summary; let notice; let status = 200;
+          let summary; let notice;
           try {
             summary = await operations.synchronize();
             notice = `Synchronization complete: ${summary.created} created, ${summary.updated} updated, ${summary.unchanged} already current, ${summary.failed} failed.`;
           } catch {
-            status = 502;
             notice = "Synchronization failed. Review the protected failure details below, correct the cause, and retry.";
           }
-          response.writeHead(status, OPERATOR_HEADERS);
-          return response.end(renderOperatorPage(config, await store.read(), notice));
+          return redirectWithOperatorNotice(response, notice, config.operatorPassword);
         }
         return json(response, 405, { error: "method_not_allowed" });
       }
