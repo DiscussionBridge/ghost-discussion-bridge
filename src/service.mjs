@@ -138,7 +138,6 @@ export function buildServer(config, store, client = new BridgeClient(config), op
           return response.end(renderOperatorPage(config, await store.read()));
         }
         if (url.pathname === "/operator/synchronize" && request.method === "POST") {
-          if (request.headers.origin && request.headers.origin !== config.operatorOrigin) return json(response, 403, { error: "origin_denied" });
           if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/x-www-form-urlencoded")) return json(response, 415, { error: "content_type" });
           const form = new URLSearchParams(await body(request, 1024));
           if (!operatorCsrfValid(form.get("csrf"), config.operatorPassword)) return json(response, 403, { error: "csrf_denied" });
