@@ -37,11 +37,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.2\.0-alpha\.24/);
+  assert.match(script, /0\.2\.0-alpha\.25/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.24", "0.1.0-alpha.99"));
-  assert.match(upgraded, /0\.2\.0-alpha\.24/);
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.25", "0.1.0-alpha.99"));
+  assert.match(upgraded, /0\.2\.0-alpha\.25/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -133,7 +133,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.24");
+  assert.equal(record.adapter_version, "0.2.0-alpha.25");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -630,7 +630,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.24");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.25");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 
@@ -670,6 +670,44 @@ test("publication URL change fails closed without creating or moving a Ghost pos
   const state = await store.read();
   assert.equal(state.publications[original.resource_id].canonical_url, originalPublication.destination);
   assert.equal(state.publications[original.resource_id].state, "complete");
+});
+
+test("verified URL migration adopts the same already-moved Ghost post", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const original = publicationRecord();
+  const before = nativePublication(original, cfg);
+  const destination = "https://ghost.example/moved-publication/";
+  const moved = publicationRecord({
+    bindings: [{
+      ...original.bindings[0], canonical_url: destination,
+      url_migration: { old_url: before.destination, new_url: destination, redirect_status: 301, verified_at: "2026-09-16T12:00:00.000000Z" },
+    }],
+  });
+  const after = nativePublication(moved, cfg);
+  const ghostId = "a".repeat(24);
+  await store.update(async (state) => {
+    state.publications[original.resource_id] = {
+      ghost_post_id: ghostId, canonical_url: before.destination,
+      revision: before.revision, adapter_version: PRODUCT_VERSION, state: "complete",
+    };
+  });
+  const remote = [{
+    id: ghostId, slug: after.slug, url: destination,
+    tags: [{ name: after.resourceTag }, { name: after.revisionTag }],
+    updated_at: "2026-09-16T12:00:00.000Z",
+  }];
+  const bridge = { records: async () => ({ bridge_records: [moved], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
+  const ghost = {
+    findByResource: async () => remote,
+    create: async () => { throw new Error("must not create"); },
+    update: async () => { throw new Error("must not update"); },
+  };
+  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 0, updated: 1, unchanged: 0, skipped: 0, failed: 0, errors: [] });
+  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 0, updated: 0, unchanged: 1, skipped: 0, failed: 0, errors: [] });
+  const state = await store.read();
+  assert.equal(state.publications[original.resource_id].ghost_post_id, ghostId);
+  assert.equal(state.publications[original.resource_id].canonical_url, destination);
 });
 
 test("publication operation persists operator-visible totals and redacts protected values", async () => {

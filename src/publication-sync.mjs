@@ -35,6 +35,15 @@ export function nativePublication(record, config) {
   if (!record || record.direction !== "from_discourse" || record.state !== "healthy" || !UUID.test(record.resource_id ?? "")) throw new Error("Invalid publication record");
   if (!Number.isSafeInteger(record.topic_id) || record.topic_id <= 0 || typeof record.content_html !== "string" || !record.content_html.trim() || Buffer.byteLength(record.content_html) > 128 * 1024) throw new Error("Invalid publication content");
   const destination = safeUrl(bindings[0].canonical_url, config.ghostOrigin, "publication destination");
+  const migrationProof = bindings[0].url_migration;
+  let urlMigration = null;
+  if (migrationProof != null) {
+    if (typeof migrationProof !== "object" || Array.isArray(migrationProof)) throw new Error("Invalid publication URL migration proof");
+    const oldUrl = safeUrl(migrationProof.old_url, config.ghostOrigin, "previous publication URL").href;
+    const newUrl = safeUrl(migrationProof.new_url, config.ghostOrigin, "migrated publication URL").href;
+    if (oldUrl === newUrl || newUrl !== destination.href || ![301, 308].includes(migrationProof.redirect_status) || !Number.isFinite(Date.parse(migrationProof.verified_at))) throw new Error("Invalid publication URL migration proof");
+    urlMigration = { oldUrl, newUrl };
+  }
   const segments = destination.pathname.split("/").filter(Boolean);
   if (segments.length !== 1 || destination.pathname !== `/${segments[0]}/` || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(segments[0])) throw new Error("Invalid publication slug");
   const source = record.source;
@@ -45,7 +54,7 @@ export function nativePublication(record, config) {
   const title = bounded(record.title, 1024, "publication title");
   const provenance = `<hr><aside class="discussionbridge-publication" data-discussionbridge-resource="${escape(record.resource_id)}" data-discussionbridge-revision="${escape(source.revision)}"><p><strong>Published from <a href="${escape(topicUrl)}">The Bridge</a></strong></p><p>Source author: ${escape(authorName)} · Revision ${escape(source.revision)} · Ghost 6.59.0 · DiscussionBridge for Ghost ${PRODUCT_VERSION}</p></aside><div data-discussionbridge-comments="interactive"></div><script src="/discussionbridge/assets/loader.js?v=${PRODUCT_VERSION}" defer></script>`;
   const revisionDigest = createHash("sha256").update(source.revision).digest("hex");
-  return { resourceId: record.resource_id, resourceTag: `#discussionbridge-resource-${record.resource_id.toLowerCase()}`, resourceTagSlug: `hash-discussionbridge-resource-${record.resource_id.toLowerCase()}`, revision: source.revision, revisionTag: `#discussionbridge-revision-${revisionDigest}`, revisionTagSlug: `hash-discussionbridge-revision-${revisionDigest}`, topicId: record.topic_id, topicUrl, destination: destination.href, slug: segments[0], title, html: `${record.content_html}${provenance}` };
+  return { resourceId: record.resource_id, resourceTag: `#discussionbridge-resource-${record.resource_id.toLowerCase()}`, resourceTagSlug: `hash-discussionbridge-resource-${record.resource_id.toLowerCase()}`, revision: source.revision, revisionTag: `#discussionbridge-revision-${revisionDigest}`, revisionTagSlug: `hash-discussionbridge-revision-${revisionDigest}`, topicId: record.topic_id, topicUrl, destination: destination.href, slug: segments[0], title, html: `${record.content_html}${provenance}`, urlMigration };
 }
 
 function exactGhostPost(post, publication) {
@@ -99,20 +108,42 @@ export async function syncPublications(config, store, bridge, ghost, { pendingLe
       if (!publication) { summary.skipped += 1; continue; }
       const operationId = randomUUID();
       let claim;
+      let migratedUrl = false;
       for (;;) {
         await store.update(async (state) => {
           const prior = state.publications[publication.resourceId];
-          if (prior?.ghost_post_id && prior.canonical_url && prior.canonical_url !== publication.destination) { claim = { kind: "url-drift" }; return; }
+          if (prior?.ghost_post_id && prior.canonical_url && prior.canonical_url !== publication.destination) { claim = { kind: "url-drift", prior }; return; }
           if (prior?.state !== "pending" && prior?.revision === publication.revision && prior?.canonical_url === publication.destination && prior?.adapter_version === PRODUCT_VERSION) { claim = { kind: "unchanged" }; return; }
           const now = Date.now();
           if (prior?.state === "pending" && Number.isFinite(prior.pending_until) && prior.pending_until > now && prior.operation_id !== operationId) { claim = { kind: "wait", milliseconds: prior.pending_until - now }; return; }
           claim = { kind: prior?.state === "pending" ? "recover" : (prior?.ghost_post_id ? "update" : "create"), prior };
           state.publications[publication.resourceId] = { ...prior, state: "pending", operation_id: operationId, pending_until: now + pendingLeaseMs, canonical_url: publication.destination, revision: publication.revision, adapter_version: PRODUCT_VERSION, topic_id: publication.topicId, topic_url: publication.topicUrl, resource_tag: publication.resourceTag };
         });
+        if (claim.kind === "url-drift" && publication.urlMigration?.oldUrl === claim.prior.canonical_url) {
+          try {
+            const movedPost = await markedPost(ghost, publication);
+            if (!movedPost || movedPost.id !== claim.prior.ghost_post_id) throw new Error("Ghost publication identity drift");
+            await store.update(async (state) => {
+              const current = state.publications[publication.resourceId];
+              if (current?.ghost_post_id !== claim.prior.ghost_post_id || current?.canonical_url !== claim.prior.canonical_url || current?.state !== "complete") throw new Error("Ghost publication migration state changed");
+              state.publications[publication.resourceId] = { ...current, canonical_url: publication.destination, synchronized_at: new Date().toISOString() };
+            });
+            migratedUrl = true;
+            continue;
+          } catch (error) {
+            claim = { kind: "migration-failed", reason: failureReason(error, config) };
+            break;
+          }
+        }
         if (claim.kind !== "wait") break;
         await delay(Math.min(claim.milliseconds + 5, pendingLeaseMs + 5));
       }
-      if (claim.kind === "unchanged") { summary.unchanged += 1; continue; }
+      if (claim.kind === "unchanged") { summary[migratedUrl ? "updated" : "unchanged"] += 1; continue; }
+      if (claim.kind === "migration-failed") {
+        summary.failed += 1;
+        summary.errors.push({ resource_id: publication.resourceId, reason: claim.reason });
+        continue;
+      }
       if (claim.kind === "url-drift") {
         summary.failed += 1;
         summary.errors.push({ resource_id: publication.resourceId, reason: "Ghost publication URL change requires an explicit migration and redirect" });
