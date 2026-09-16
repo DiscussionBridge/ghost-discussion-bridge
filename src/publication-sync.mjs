@@ -49,7 +49,8 @@ export function nativePublication(record, config) {
 }
 
 function exactGhostPost(post, publication) {
-  if (!post || !/^[a-f0-9]{24}$/iu.test(post.id ?? "") || post.slug !== publication.slug || post.url !== publication.destination) throw new Error("Ghost publication identity drift");
+  if (!post || !/^[a-f0-9]{24}$/iu.test(post.id ?? "")) throw new Error("Ghost publication identity drift");
+  if (post.slug !== publication.slug || post.url !== publication.destination) throw new Error("Ghost publication URL change requires an explicit migration and redirect");
   return post;
 }
 

@@ -634,6 +634,34 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 
+test("publication URL change fails closed without creating or moving a Ghost post", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const original = publicationRecord();
+  const originalPublication = nativePublication(original, cfg);
+  const moved = publicationRecord({
+    bindings: [{ ...original.bindings[0], canonical_url: "https://ghost.example/moved-publication/" }],
+  });
+  const remote = [{
+    id: "a".repeat(24), slug: originalPublication.slug, url: originalPublication.destination,
+    tags: [{ name: originalPublication.resourceTag }, { name: originalPublication.revisionTag }],
+    updated_at: "2026-09-02T00:00:00.000Z",
+  }];
+  const bridge = { records: async () => ({ bridge_records: [moved], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
+  let creates = 0; let updates = 0;
+  const ghost = {
+    findByResource: async () => remote,
+    create: async () => { creates += 1; },
+    update: async () => { updates += 1; },
+  };
+  const result = await syncPublications(cfg, store, bridge, ghost);
+  assert.equal(result.failed, 1);
+  assert.match(result.errors[0].reason, /URL change requires an explicit migration and redirect/u);
+  assert.equal(creates, 0);
+  assert.equal(updates, 0);
+  assert.equal(remote[0].url, originalPublication.destination);
+});
+
 test("publication operation persists operator-visible totals and redacts protected values", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
