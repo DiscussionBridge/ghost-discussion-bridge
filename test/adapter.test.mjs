@@ -672,6 +672,44 @@ test("publication URL change fails closed without creating or moving a Ghost pos
   assert.equal(state.publications[original.resource_id].state, "complete");
 });
 
+test("verified URL migration adopts the same already-moved Ghost post", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const original = publicationRecord();
+  const before = nativePublication(original, cfg);
+  const destination = "https://ghost.example/moved-publication/";
+  const moved = publicationRecord({
+    bindings: [{
+      ...original.bindings[0], canonical_url: destination,
+      url_migration: { old_url: before.destination, new_url: destination, redirect_status: 301, verified_at: "2026-09-16T12:00:00.000000Z" },
+    }],
+  });
+  const after = nativePublication(moved, cfg);
+  const ghostId = "a".repeat(24);
+  await store.update(async (state) => {
+    state.publications[original.resource_id] = {
+      ghost_post_id: ghostId, canonical_url: before.destination,
+      revision: before.revision, adapter_version: PRODUCT_VERSION, state: "complete",
+    };
+  });
+  const remote = [{
+    id: ghostId, slug: after.slug, url: destination,
+    tags: [{ name: after.resourceTag }, { name: after.revisionTag }],
+    updated_at: "2026-09-16T12:00:00.000Z",
+  }];
+  const bridge = { records: async () => ({ bridge_records: [moved], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
+  const ghost = {
+    findByResource: async () => remote,
+    create: async () => { throw new Error("must not create"); },
+    update: async () => { throw new Error("must not update"); },
+  };
+  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 0, updated: 1, unchanged: 0, skipped: 0, failed: 0, errors: [] });
+  assert.deepEqual(await syncPublications(cfg, store, bridge, ghost), { created: 0, updated: 0, unchanged: 1, skipped: 0, failed: 0, errors: [] });
+  const state = await store.read();
+  assert.equal(state.publications[original.resource_id].ghost_post_id, ghostId);
+  assert.equal(state.publications[original.resource_id].canonical_url, destination);
+});
+
 test("publication operation persists operator-visible totals and redacts protected values", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
