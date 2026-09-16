@@ -44,14 +44,22 @@ function linked(value, origin, label = value) {
   return href ? `<a href="${escape(href)}" rel="noopener noreferrer">${escape(label)}</a>` : escape(label || "—");
 }
 
+function operatorState(direction, state) {
+  const labels = direction === "To Discourse"
+    ? { created: "Discourse topic created", resolved: "Existing Discourse topic found" }
+    : { complete: "Ghost post created", created: "Ghost post created", resolved: "Existing Ghost post resolved" };
+  return labels[state] ?? state;
+}
+
 function row(direction, id, item, config) {
   const source = direction === "To Discourse" ? item.canonical_url : item.topic_url;
   const destination = direction === "To Discourse" ? item.topic_url : item.canonical_url;
   const sourceOrigin = direction === "To Discourse" ? config.ghostOrigin : config.serverUrl;
   const destinationOrigin = direction === "To Discourse" ? config.serverUrl : config.ghostOrigin;
   const state = direction === "To Discourse" ? (item.outcome ?? "mapped") : (item.state ?? "unknown");
+  const stateLabel = operatorState(direction, state);
   const activity = item.synchronized_at ?? item.updated_at ?? "—";
-  return `<tr><td>${escape(direction)}</td><td><code>${escape(id)}</code></td><td>${linked(source, sourceOrigin)}</td><td>${linked(destination, destinationOrigin)}</td><td><span class="state state--${state === "complete" || state === "created" || state === "resolved" ? "healthy" : "attention"}">${escape(state)}</span></td><td>${escape(activity)}</td></tr>`;
+  return `<tr><td>${escape(direction)}</td><td><code>${escape(id)}</code></td><td>${linked(source, sourceOrigin)}</td><td>${linked(destination, destinationOrigin)}</td><td><span class="state state--${state === "complete" || state === "created" || state === "resolved" ? "healthy" : "attention"}">${escape(stateLabel)}</span></td><td>${escape(activity)}</td></tr>`;
 }
 
 export function renderOperatorPage(config, state, notice = "") {

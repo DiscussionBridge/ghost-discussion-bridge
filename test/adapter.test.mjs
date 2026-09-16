@@ -221,6 +221,8 @@ test("operator status is protected, credential-free, and synchronizes with a bou
     assert.match(html, /Ghost → Discourse mappings/u);
     assert.match(html, /Discourse → Ghost publications/u);
     assert.match(html, /ghost-post:abc/u);
+    assert.match(html, /Existing Discourse topic found/u);
+    assert.match(html, /Ghost post created/u);
     assert.match(html, /Synchronize publications/u);
     assert.doesNotMatch(html, new RegExp(`${"s".repeat(32)}|${"w".repeat(32)}|${"a".repeat(24)}:${"b".repeat(64)}|${"o".repeat(32)}`));
     const csrf = /name="csrf" value="([a-f0-9]{64})"/u.exec(html)?.[1];
