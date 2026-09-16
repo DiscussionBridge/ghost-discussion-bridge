@@ -102,6 +102,7 @@ export async function syncPublications(config, store, bridge, ghost, { pendingLe
       for (;;) {
         await store.update(async (state) => {
           const prior = state.publications[publication.resourceId];
+          if (prior?.ghost_post_id && prior.canonical_url && prior.canonical_url !== publication.destination) { claim = { kind: "url-drift" }; return; }
           if (prior?.state !== "pending" && prior?.revision === publication.revision && prior?.canonical_url === publication.destination && prior?.adapter_version === PRODUCT_VERSION) { claim = { kind: "unchanged" }; return; }
           const now = Date.now();
           if (prior?.state === "pending" && Number.isFinite(prior.pending_until) && prior.pending_until > now && prior.operation_id !== operationId) { claim = { kind: "wait", milliseconds: prior.pending_until - now }; return; }
@@ -112,6 +113,11 @@ export async function syncPublications(config, store, bridge, ghost, { pendingLe
         await delay(Math.min(claim.milliseconds + 5, pendingLeaseMs + 5));
       }
       if (claim.kind === "unchanged") { summary.unchanged += 1; continue; }
+      if (claim.kind === "url-drift") {
+        summary.failed += 1;
+        summary.errors.push({ resource_id: publication.resourceId, reason: "Ghost publication URL change requires an explicit migration and redirect" });
+        continue;
+      }
       try {
         let result = await markedPost(ghost, publication);
         if (!result && claim.prior?.ghost_post_id) result = exactGhostPost(await ghost.get(claim.prior.ghost_post_id), publication);

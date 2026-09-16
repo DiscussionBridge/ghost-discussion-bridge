@@ -647,10 +647,16 @@ test("publication URL change fails closed without creating or moving a Ghost pos
     tags: [{ name: originalPublication.resourceTag }, { name: originalPublication.revisionTag }],
     updated_at: "2026-09-02T00:00:00.000Z",
   }];
+  await store.update(async (state) => {
+    state.publications[original.resource_id] = {
+      ghost_post_id: remote[0].id, canonical_url: originalPublication.destination,
+      revision: originalPublication.revision, adapter_version: PRODUCT_VERSION, state: "complete",
+    };
+  });
   const bridge = { records: async () => ({ bridge_records: [moved], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
-  let creates = 0; let updates = 0;
+  let creates = 0; let updates = 0; let lookups = 0;
   const ghost = {
-    findByResource: async () => remote,
+    findByResource: async () => { lookups += 1; return remote; },
     create: async () => { creates += 1; },
     update: async () => { updates += 1; },
   };
@@ -659,7 +665,11 @@ test("publication URL change fails closed without creating or moving a Ghost pos
   assert.match(result.errors[0].reason, /URL change requires an explicit migration and redirect/u);
   assert.equal(creates, 0);
   assert.equal(updates, 0);
+  assert.equal(lookups, 0);
   assert.equal(remote[0].url, originalPublication.destination);
+  const state = await store.read();
+  assert.equal(state.publications[original.resource_id].canonical_url, originalPublication.destination);
+  assert.equal(state.publications[original.resource_id].state, "complete");
 });
 
 test("publication operation persists operator-visible totals and redacts protected values", async () => {
