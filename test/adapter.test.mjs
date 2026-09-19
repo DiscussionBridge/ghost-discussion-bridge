@@ -37,11 +37,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.2\.0-alpha\.25/);
+  assert.match(script, /0\.2\.0-alpha\.26/);
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.25", "0.1.0-alpha.99"));
-  assert.match(upgraded, /0\.2\.0-alpha\.25/);
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.26", "0.1.0-alpha.99"));
+  assert.match(upgraded, /0\.2\.0-alpha\.26/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -133,7 +133,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.25");
+  assert.equal(record.adapter_version, "0.2.0-alpha.26");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -194,6 +194,42 @@ test("webhook resolves once and persists no secret", async () => {
     const state = JSON.stringify(await store.read());
     assert.match(state, /ghost-post:abc/);
     assert.doesNotMatch(state, new RegExp("s{32}|w{32}"));
+  } finally { server.close(); }
+});
+
+test("a Ghost URL move cannot replace the stored Bridge Record or topic", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  let calls = 0;
+  const client = { resolve: async () => {
+    calls++;
+    return { outcome: calls === 1 ? "created" : "resolved", resource_id: calls === 2
+      ? "22222222-2222-4222-8222-222222222222" : "11111111-1111-4111-8111-111111111111",
+      topic_id: calls === 2 ? 43 : 42, topic_url: `https://forum.example/t/x/${calls === 2 ? 43 : 42}`,
+      core_fallback: false };
+  } };
+  const server = buildServer(cfg, store, client);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const send = async (url) => {
+      const body = JSON.stringify({ post: { current: { id: "abc", title: "Article", html: "<p>Ghost content.</p>",
+        url, status: "published", tags: [{ name: "#discussionbridge" }] } } });
+      const timestamp = String(Date.now());
+      const signature = createHmac("sha256", "w".repeat(32)).update(`${body}${timestamp}`).digest("hex");
+      return fetch(`http://127.0.0.1:${server.address().port}/webhooks/ghost`, { method: "POST",
+        headers: { "Content-Type": "application/json", "X-Ghost-Signature": `sha256=${signature}, t=${timestamp}` }, body });
+    };
+    assert.equal((await send("https://ghost.example/article/")).status, 200);
+    assert.equal((await send("https://ghost.example/article-moved/")).status, 502);
+    const post = (await store.read()).posts["ghost-post:abc"];
+    assert.equal(post.resource_id, "11111111-1111-4111-8111-111111111111");
+    assert.equal(post.topic_id, 42);
+    assert.equal(post.canonical_url, "https://ghost.example/article/");
+    assert.equal((await send("https://ghost.example/article-moved/")).status, 200);
+    const moved = (await store.read()).posts["ghost-post:abc"];
+    assert.equal(moved.resource_id, post.resource_id);
+    assert.equal(moved.topic_id, post.topic_id);
+    assert.equal(moved.canonical_url, "https://ghost.example/article-moved/");
   } finally { server.close(); }
 });
 
@@ -630,7 +666,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.25");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.26");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 

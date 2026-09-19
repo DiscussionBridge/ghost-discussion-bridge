@@ -198,6 +198,10 @@ export function buildServer(config, store, client = new BridgeClient(config), op
         }
         const topicUrl = exactTopicUrl(result.topic_url, config.serverUrl);
         await store.update(async (state) => {
+          const prior = state.posts[record.external_id];
+          if (prior && (prior.resource_id !== result.resource_id || prior.topic_id !== result.topic_id)) {
+            throw new Error("Ghost publication identity changed during an exact retry");
+          }
           state.posts[record.external_id] = { resource_id: result.resource_id, topic_id: result.topic_id, topic_url: topicUrl, outcome: result.outcome, canonical_url: record.canonical_url, updated_at: new Date().toISOString() };
         });
         return json(response, 200, { accepted: true, resource_id: result.resource_id, topic_id: result.topic_id, outcome: result.outcome });
