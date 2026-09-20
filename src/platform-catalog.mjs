@@ -12,9 +12,11 @@ function label(value) {
 export async function buildPlatformCatalog(ghost) {
   const observed = await ghost.listTags();
   if (observed.length > MAX_TERMS) throw new Error("Ghost tag inventory is too large");
-  const terms = observed.map((tag) => {
+  const terms = observed.flatMap((tag) => {
     if (!tag || !GHOST_ID.test(tag.id ?? "")) throw new Error("Invalid Ghost tag identity");
-    return { id: `tag:${tag.id.toLowerCase()}`, label: label(tag.name), kind: "term" };
+    const name = label(tag.name);
+    if (name.toLowerCase().startsWith("#discussionbridge-")) return [];
+    return [{ id: `tag:${tag.id.toLowerCase()}`, label: name, kind: "term" }];
   });
   if (new Set(terms.map(({ id }) => id)).size !== terms.length) throw new Error("Duplicate Ghost tag identity");
 
