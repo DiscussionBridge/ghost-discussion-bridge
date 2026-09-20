@@ -147,7 +147,7 @@ function postPayload(plan, status, resourceId, updatedAt) {
 
 function validateResolve(response, plan, post) {
   const resourceId = response?.resource_id;
-  if (!UUID.test(resourceId ?? "") || !["created", "resolved"].includes(response?.outcome) || response?.topic_id !== plan.topicId ||
+  if (!UUID.test(resourceId ?? "") || !["created", "resolved"].includes(response?.outcome) ||
       response?.external_id !== `ghost:${plan.type}:${post.id}` || response?.canonical_url !== post.url ||
       response?.pending_publication_revision !== plan.publicationRevision || response?.pending_mapping_revision !== plan.mappingRevision) {
     throw new Error("Invalid source-topic resolve response");
