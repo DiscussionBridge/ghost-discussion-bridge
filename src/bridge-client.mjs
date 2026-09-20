@@ -1,8 +1,13 @@
 import { PRODUCT_VERSION } from "./version.mjs";
 
 const MAX_BYTES = 65_536;
+const MAX_REQUEST_BYTES = 256 * 1024;
+const MAX_DETAIL_BYTES = 384 * 1024;
+const MAX_FEED_BYTES = 1024 * 1024;
+const MAX_CATALOG_BYTES = 1024 * 1024;
 const MAX_CONTENT_HTML_BYTES = 48 * 1024;
 const MAX_SOURCE_AUTHORS = 20;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function boundedString(value, maximum, label) {
   if (typeof value !== "string" || value.trim() === "" || Buffer.byteLength(value) > maximum) {
@@ -75,6 +80,45 @@ export class BridgeClient {
     return this.request("GET", `/discussion-bridge/v1/bridge-records.json?${query}`);
   }
 
+  async platformCatalogStatus() {
+    return this.request("GET", "/discussion-bridge/v1/platform-catalog.json", undefined, true, MAX_CATALOG_BYTES);
+  }
+
+  async updatePlatformCatalog(catalog, expectedCatalogRevision) {
+    return this.request("PUT", "/discussion-bridge/v1/platform-catalog.json", {
+      catalog,
+      ...(expectedCatalogRevision ? { expected_catalog_revision: expectedCatalogRevision } : {}),
+    });
+  }
+
+  async sourceTopics(cursor) {
+    return this.request("GET", `/discussion-bridge/v1/source-topics.json${this.cursorQuery(cursor)}`, undefined, true, MAX_FEED_BYTES);
+  }
+
+  async sourceTopic(topicId) {
+    if (!Number.isSafeInteger(topicId) || topicId <= 0) throw new Error("Invalid topic ID");
+    return this.request("GET", `/discussion-bridge/v1/source-topics/${topicId}.json`, undefined, true, MAX_DETAIL_BYTES);
+  }
+
+  async sourceRevocations(cursor) {
+    return this.request("GET", `/discussion-bridge/v1/source-revocations.json${this.cursorQuery(cursor)}`, undefined, true, MAX_FEED_BYTES);
+  }
+
+  async sourceRevocation(resourceId) {
+    if (!UUID.test(resourceId)) throw new Error("Invalid resource ID");
+    return this.request("GET", `/discussion-bridge/v1/source-revocations/${encodeURIComponent(resourceId)}.json`);
+  }
+
+  async resolveSourceTopic(topicId, publication) {
+    if (!Number.isSafeInteger(topicId) || topicId <= 0) throw new Error("Invalid topic ID");
+    return this.request("POST", `/discussion-bridge/v1/source-topics/${topicId}/resolve.json`, { publication });
+  }
+
+  async acknowledgePublication(resourceId, acknowledgement) {
+    if (!UUID.test(resourceId)) throw new Error("Invalid resource ID");
+    return this.request("PUT", `/discussion-bridge/v1/bridge-records/${encodeURIComponent(resourceId)}/acknowledgement.json`, { acknowledgement });
+  }
+
   async publicTopic(topicId) {
     if (!Number.isSafeInteger(topicId) || topicId <= 0) throw new Error("Invalid topic ID");
     return this.request("GET", `/t/${topicId}.json`, undefined, false);
@@ -123,9 +167,9 @@ export class BridgeClient {
     return settings.enable_powered_by_discourse;
   }
 
-  async request(method, path, payload, authenticate = true) {
+  async request(method, path, payload, authenticate = true, maximumBytes = MAX_BYTES) {
     const body = payload === undefined ? undefined : JSON.stringify(payload);
-    if (body && Buffer.byteLength(body) > MAX_BYTES) throw new Error("Request too large");
+    if (body && Buffer.byteLength(body) > MAX_REQUEST_BYTES) throw new Error("Request too large");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10_000);
     let response;
@@ -140,6 +184,8 @@ export class BridgeClient {
           ...(authenticate ? {
             "X-DiscussionBridge-Connection": this.config.connectionId,
             "X-DiscussionBridge-Secret": this.config.connectionSecret,
+            "X-DiscussionBridge-Adapter": "ghost-discussion-bridge",
+            "X-DiscussionBridge-Adapter-Version": PRODUCT_VERSION,
           } : {}),
         },
         body,
@@ -153,9 +199,9 @@ export class BridgeClient {
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     if (!contentType.startsWith("application/json")) throw new Error("Invalid response content type");
     const declared = Number(response.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > MAX_BYTES) throw new Error("Response too large");
+    if (Number.isFinite(declared) && declared > maximumBytes) throw new Error("Response too large");
     const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength > MAX_BYTES) throw new Error("Response too large");
+    if (bytes.byteLength > maximumBytes) throw new Error("Response too large");
     let data;
     try { data = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new Error("Invalid response JSON"); }
     if (!response.ok) {
@@ -166,6 +212,14 @@ export class BridgeClient {
       throw error;
     }
     return data;
+  }
+
+  cursorQuery(cursor) {
+    if (cursor === undefined || cursor === null) return "";
+    if (typeof cursor !== "string" || !cursor || cursor.length > 8192 || /[\u0000-\u0020\u007f]/u.test(cursor)) {
+      throw new Error("Invalid source cursor");
+    }
+    return `?${new URLSearchParams({ cursor })}`;
   }
 }
 

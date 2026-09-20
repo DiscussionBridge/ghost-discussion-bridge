@@ -3,6 +3,12 @@ import { createHmac } from "node:crypto";
 const MAX_BYTES = 256 * 1024;
 const RESOURCE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
+function collection(contentType) {
+  if (contentType === "post") return "posts";
+  if (contentType === "page") return "pages";
+  throw new Error("Invalid Ghost content type");
+}
+
 function token(apiKey, now = Math.floor(Date.now() / 1000)) {
   const match = /^([a-f0-9]{24}):([a-f0-9]{64})$/iu.exec(apiKey);
   if (!match) throw new Error("Invalid Ghost Admin API key");
@@ -20,27 +26,47 @@ export class GhostAdminClient {
     this.fetch = fetchImplementation;
   }
 
-  async create(post) {
-    return (await this.request("POST", "/ghost/api/admin/posts/?source=html", { posts: [post] })).posts?.[0];
+  async create(post, contentType = "post") {
+    const key = collection(contentType);
+    return (await this.request("POST", `/ghost/api/admin/${key}/?source=html`, { [key]: [post] }))[key]?.[0];
   }
 
-  async get(id) {
+  async get(id, contentType = "post") {
     if (!/^[a-f0-9]{24}$/iu.test(id)) throw new Error("Invalid Ghost post ID");
-    return (await this.request("GET", `/ghost/api/admin/posts/${id}/?formats=html`)).posts?.[0];
+    const key = collection(contentType);
+    return (await this.request("GET", `/ghost/api/admin/${key}/${id}/?formats=html&include=tags`))[key]?.[0];
   }
 
-  async findByResource(resourceId) {
+  async findByResource(resourceId, contentType = "post") {
     if (!RESOURCE_ID.test(resourceId)) throw new Error("Invalid DiscussionBridge resource ID");
     const tag = `hash-discussionbridge-resource-${resourceId.toLowerCase()}`;
-    const path = `/ghost/api/admin/posts/?filter=${encodeURIComponent(`tag:${tag}`)}&limit=3&formats=html&include=tags`;
-    const posts = (await this.request("GET", path)).posts;
+    const key = collection(contentType);
+    const path = `/ghost/api/admin/${key}/?filter=${encodeURIComponent(`tag:${tag}`)}&limit=3&formats=html&include=tags`;
+    const posts = (await this.request("GET", path))[key];
     if (!Array.isArray(posts)) throw new Error("Invalid Ghost publication resource lookup");
     return posts;
   }
 
-  async update(id, post) {
+  async findByTopic(topicId, contentType = "post") {
+    if (!Number.isSafeInteger(topicId) || topicId <= 0) throw new Error("Invalid Discourse topic ID");
+    const key = collection(contentType);
+    const tag = `hash-discussionbridge-topic-${topicId}`;
+    const path = `/ghost/api/admin/${key}/?filter=${encodeURIComponent(`tag:${tag}`)}&limit=3&formats=html&include=tags`;
+    const items = (await this.request("GET", path))[key];
+    if (!Array.isArray(items)) throw new Error("Invalid Ghost publication topic lookup");
+    return items;
+  }
+
+  async listTags() {
+    const tags = (await this.request("GET", "/ghost/api/admin/tags/?limit=all&order=id%20asc")).tags;
+    if (!Array.isArray(tags)) throw new Error("Invalid Ghost tag inventory");
+    return tags;
+  }
+
+  async update(id, post, contentType = "post") {
     if (!/^[a-f0-9]{24}$/iu.test(id)) throw new Error("Invalid Ghost post ID");
-    return (await this.request("PUT", `/ghost/api/admin/posts/${id}/?source=html`, { posts: [post] })).posts?.[0];
+    const key = collection(contentType);
+    return (await this.request("PUT", `/ghost/api/admin/${key}/${id}/?source=html`, { [key]: [post] }))[key]?.[0];
   }
 
   async request(method, path, payload) {

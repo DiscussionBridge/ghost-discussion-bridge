@@ -178,7 +178,7 @@ export function buildServer(config, store, client = new BridgeClient(config), op
           let summary; let notice;
           try {
             summary = await operations.synchronize();
-            notice = `Synchronization complete: ${summary.created} created, ${summary.updated} updated, ${summary.unchanged} already current, ${summary.failed} failed.`;
+            notice = `Synchronization complete: ${summary.created} created, ${summary.updated} updated, ${summary.unchanged} already current, ${summary.held} held, ${summary.unpublished} unpublished, ${summary.failed} failed.`;
           } catch {
             notice = "Synchronization failed. Review the protected failure details below, correct the cause, and retry.";
           }
