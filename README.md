@@ -31,7 +31,8 @@ runs as a small loopback-only Node service beside Ghost.
   bounded source-topic and revocation feeds. The forum operator chooses the
   eligible categories and tags and maps them to the real Ghost destination;
   the adapter owns the cursor, native persistence, retry and failure behavior.
-  `npm run sync:publications` drafts a uniquely topic-marked Ghost item before
+  `npm run sync:publications` is the explicit initial/backfill operation. It
+  drafts a uniquely topic-marked Ghost item before
   reserving its Bridge Record, publishes only after the exact resource/topic/
   destination tuple is durable, and acknowledges the exact source, mapping and
   publication revisions. An unchanged rerun adopts the same native item and
@@ -40,6 +41,14 @@ runs as a small loopback-only Node service beside Ghost.
   item carries a source/provenance note and mapped Interactive discussion. It
   is tagged `#discussionbridge-source`, not the outbound `#discussionbridge`
   opt-in, preventing a publication loop.
+  After that initial pass completes, `npm run sync:publication-work` is the
+  steady-state worker: it claims at most 20 receiver-owned work items with an
+  exact five-minute lease, materializes or drafts the one identified native
+  item, acknowledges only against that lease, and reports bounded failures to
+  the receiver for shared attention/retry handling. It does not rescan the
+  whole forum. The original Discourse topic creation time becomes Ghost's
+  `published_at`; later first-post changes update the same item without
+  rewriting its publication date.
 - Published Ghost posts can render their exact mapped Discourse discussion.
   The same-origin loader resolves the current canonical Ghost URL through the
   adapter's nonsecret comments endpoint, then starts Discourse's standard

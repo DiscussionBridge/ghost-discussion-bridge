@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { syncForumPublications } from "./forum-publication-sync.mjs";
+import { syncForumPublications, syncQueuedForumPublications } from "./forum-publication-sync.mjs";
 
 const RUN_LEASE_MS = 2 * 60 * 1000;
 
@@ -28,6 +28,22 @@ function safeSummary(summary, config = {}) {
 }
 
 export async function runPublicationSynchronization(config, store, bridge, ghost, { now = () => new Date() } = {}) {
+  return runPublicationOperation(config, store, bridge, ghost, {
+    now,
+    operationKind: "backfill",
+    synchronize: () => syncForumPublications(config, store, bridge, ghost),
+  });
+}
+
+export async function runPublicationQueue(config, store, bridge, ghost, { now = () => new Date() } = {}) {
+  return runPublicationOperation(config, store, bridge, ghost, {
+    now,
+    operationKind: "incremental",
+    synchronize: () => syncQueuedForumPublications(config, store, bridge, ghost),
+  });
+}
+
+async function runPublicationOperation(config, store, bridge, ghost, { now, operationKind, synchronize }) {
   const operationId = randomUUID();
   const startedAt = now().toISOString();
   let claimed = false;
@@ -35,24 +51,24 @@ export async function runPublicationSynchronization(config, store, bridge, ghost
     const prior = state.publication_sync;
     const priorStarted = Date.parse(prior?.started_at ?? "");
     if (prior?.state === "running" && Number.isFinite(priorStarted) && Date.now() - priorStarted < RUN_LEASE_MS) return;
-    state.publication_sync = { state: "running", operation_id: operationId, started_at: startedAt };
+    state.publication_sync = { state: "running", operation: operationKind, operation_id: operationId, started_at: startedAt };
     claimed = true;
   });
   if (!claimed) throw new Error("Publication synchronization is already running");
 
   try {
-    const summary = safeSummary(await syncForumPublications(config, store, bridge, ghost), config);
+    const summary = safeSummary(await synchronize(), config);
     const completedAt = now().toISOString();
     await store.update(async (state) => {
       if (state.publication_sync?.operation_id !== operationId) throw new Error("Publication synchronization ownership changed");
-      state.publication_sync = { state: summary.failed ? "attention" : "complete", operation_id: operationId, started_at: startedAt, completed_at: completedAt, summary };
+      state.publication_sync = { state: summary.failed ? "attention" : "complete", operation: operationKind, operation_id: operationId, started_at: startedAt, completed_at: completedAt, summary };
     });
     return summary;
   } catch (error) {
     const completedAt = now().toISOString();
     await store.update(async (state) => {
       if (state.publication_sync?.operation_id !== operationId) return;
-      state.publication_sync = { state: "attention", operation_id: operationId, started_at: startedAt, completed_at: completedAt, summary: { created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 1, errors: [{ resource_id: null, reason: safeReason(error?.message, [config.connectionSecret, config.webhookSecret, config.ghostAdminApiKey, config.operatorPassword]) }] } };
+      state.publication_sync = { state: "attention", operation: operationKind, operation_id: operationId, started_at: startedAt, completed_at: completedAt, summary: { created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 1, errors: [{ resource_id: null, reason: safeReason(error?.message, [config.connectionSecret, config.webhookSecret, config.ghostAdminApiKey, config.operatorPassword]) }] } };
     });
     throw error;
   }

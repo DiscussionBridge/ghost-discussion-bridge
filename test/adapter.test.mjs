@@ -11,7 +11,7 @@ import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
 import { isInteractiveCommentsMode, normalizeCommentsMode } from "../src/comments-mode.mjs";
 import { ghostAdminToken } from "../src/ghost-admin-client.mjs";
-import { publicationPlan, syncForumPublications } from "../src/forum-publication-sync.mjs";
+import { publicationPlan, syncForumPublications, syncQueuedForumPublications } from "../src/forum-publication-sync.mjs";
 import { installRichContent, mergeCodeInjection } from "../src/install-rich-content.mjs";
 import { buildPlatformCatalog } from "../src/platform-catalog.mjs";
 import { runPublicationSynchronization } from "../src/publication-operations.mjs";
@@ -39,11 +39,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.2\.0-alpha\.30/);
+  assert.match(script, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.30", "0.1.0-alpha.99"));
-  assert.match(upgraded, /0\.2\.0-alpha\.30/);
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.31", "0.1.0-alpha.99"));
+  assert.match(upgraded, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -135,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.30");
+  assert.equal(record.adapter_version, "0.2.0-alpha.31");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -197,6 +197,26 @@ test("webhook resolves once and persists no secret", async () => {
     assert.match(state, /ghost-post:abc/);
     assert.doesNotMatch(state, new RegExp("s{32}|w{32}"));
   } finally { server.close(); }
+});
+
+test("publication work lease is exact and is carried only on its acknowledgement", async () => {
+  const cfg = await config();
+  const requests = [];
+  const leaseToken = "c".repeat(64);
+  const client = new BridgeClient(cfg, async (url, options) => {
+    requests.push({ url, options });
+    const payload = url.endsWith("/publication-work/claim.json")
+      ? { publication_work: { topic_id: 53, action: "publish", lease_token: leaseToken } }
+      : { resource_id: "33333333-3333-4333-8333-333333333333" };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  await client.claimPublicationWork(300);
+  await client.acknowledgePublication("33333333-3333-4333-8333-333333333333", { outcome: "published" });
+  assert.deepEqual(JSON.parse(requests[0].options.body), { lease_seconds: 300 });
+  assert.equal(JSON.parse(requests[1].options.body).acknowledgement.lease_token, leaseToken);
+  client.clearPublicationLease();
+  await client.acknowledgePublication("33333333-3333-4333-8333-333333333333", { outcome: "unchanged" });
+  assert.equal(Object.hasOwn(JSON.parse(requests[2].options.body).acknowledgement, "lease_token"), false);
 });
 
 test("a Ghost URL move cannot replace the stored Bridge Record or topic", async () => {
@@ -631,6 +651,7 @@ function forumSourceTopic(overrides = {}) {
     title: "Forum scale canary",
     source_revision: "post:149:version:1",
     content_bytes: 39,
+    source_created_at: "2026-09-19T15:00:00.000000Z",
     source_updated_at: "2026-09-20T16:00:00.000000Z",
     category: { id: 6, slug: "forum-scale-canary", name: "Forum Scale Canary" },
     tags: [{ id: 7, slug: "policy", name: "policy" }],
@@ -648,7 +669,7 @@ function forumSyncHarness() {
   const remote = [];
   const resourceId = "33333333-3333-4333-8333-333333333333";
   const bridge = {
-    platformCatalogStatus: async () => ({ catalog_revision: null }),
+    platformCatalogStatus: async () => ({ catalog_revision: null, destination_mapping_state: "current" }),
     updatePlatformCatalog: async () => ({ destination_mapping_state: "current" }),
     sourceTopics: async () => ({ source_topics: [summary], pagination: { complete: true, next_cursor: null } }),
     sourceTopic: async () => ({ eligible: true, source_topic: detail }),
@@ -719,6 +740,37 @@ test("forum publication synchronization creates once, acknowledges, and exact re
   assert.equal((await store.read()).forum_publications["53"].canonical_url, "https://ghost.example/forum-topic-53/");
   assert.equal(hasOwn(await store.read(), "forum_publications"), true);
   assert.equal((await store.read()).forum_publications["53"].resource_id, resourceId);
+  assert.equal(remote[0].published_at, summary.source_created_at);
+});
+
+test("incremental publication queue claims and acknowledges the exact Ghost item once", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, ghost, remote, summary } = forumSyncHarness();
+  let claims = 0;
+  let cleared = 0;
+  bridge.claimPublicationWork = async (leaseSeconds) => {
+    assert.equal(leaseSeconds, 300);
+    claims += 1;
+    return { publication_work: claims === 1 ? {
+      topic_id: summary.topic_id,
+      resource_id: null,
+      action: "publish",
+      source_revision: summary.source_revision,
+      publication_revision: summary.publication_revision,
+      lease_token: "c".repeat(64),
+      lease_expires_at: "2026-09-20T16:05:00.000000Z",
+    } : null };
+  };
+  bridge.clearPublicationLease = () => { cleared += 1; };
+  bridge.failPublicationWork = async () => { throw new Error("must not report failure"); };
+  assert.deepEqual(await syncQueuedForumPublications(cfg, store, bridge, ghost), {
+    created: 1, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [],
+  });
+  assert.equal(claims, 2);
+  assert.equal(cleared, 1);
+  assert.equal(remote.length, 1);
+  assert.equal(remote[0].published_at, summary.source_created_at);
 });
 
 test("forum publication synchronization adopts a uniquely marked draft after a lost create response", async () => {
@@ -847,7 +899,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.30");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.31");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 

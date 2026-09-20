@@ -21,7 +21,7 @@ function same(left, right) {
 
 function sameSourceSummary(summary, detail) {
   const keys = [
-    "topic_id", "topic_url", "title", "source_revision", "content_bytes", "source_updated_at",
+    "topic_id", "topic_url", "title", "source_revision", "content_bytes", "source_created_at", "source_updated_at",
     "category", "tags", "author", "publication", "publication_revision", "destination",
   ];
   return keys.every((key) => same(summary?.[key] ?? null, detail?.[key] ?? null));
@@ -104,6 +104,14 @@ function publicationPlan(item, detail, config) {
   const title = bounded(item.title, 255, "source title");
   const topicUrl = safeUrl(item.topic_url, config.serverUrl, "source topic URL");
   const author = bounded(item.author?.name, 200, "source author");
+  const createdAt = bounded(item.source_created_at, 64, "source creation time");
+  const updatedAt = bounded(item.source_updated_at, 64, "source update time");
+  for (const [label, value] of [["creation", createdAt], ["update", updatedAt]]) {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/u.test(value) || !Number.isFinite(Date.parse(value))) {
+      throw new Error(`Invalid source ${label} time`);
+    }
+  }
+  if (Date.parse(updatedAt) < Date.parse(createdAt)) throw new Error("Source update precedes creation");
   const html = sanitizeSource(detail.content_html);
   const type = contentType(destination);
   const topicTag = `#discussionbridge-topic-${topicId}`;
@@ -114,6 +122,7 @@ function publicationPlan(item, detail, config) {
     title, topicUrl, html: `${html}${provenance}`, type, topicTag, revisionTag,
     slug: slugFor(destination, title, topicId), mappedTags: mappedTags(destination),
     publication: item.publication && typeof item.publication === "object" ? item.publication : {},
+    createdAt, updatedAt,
   };
 }
 
@@ -145,6 +154,7 @@ function postPayload(plan, status, resourceId, updatedAt) {
     status,
     tags,
     ...(plan.slug ? { slug: plan.slug } : {}),
+    published_at: plan.createdAt,
     ...(updatedAt ? { updated_at: updatedAt } : {}),
   };
 }
@@ -376,6 +386,50 @@ export async function syncForumPublications(config, store, bridge, ghost) {
     }
     cursor = nextCursor(payload);
   } while (cursor);
+  return summary;
+}
+
+export async function syncQueuedForumPublications(config, store, bridge, ghost, maximum = 20) {
+  if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 20) throw new Error("Invalid publication work limit");
+  const catalog = await bridge.platformCatalogStatus();
+  if (catalog?.destination_mapping_state !== "current") throw new Error("Ghost destination mapping requires operator configuration");
+  const summary = { created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [] };
+
+  for (let index = 0; index < maximum; index++) {
+    const claimed = await bridge.claimPublicationWork(300);
+    const work = claimed?.publication_work;
+    if (work === null) break;
+    try {
+      let result;
+      if (work.action === "publish") {
+        const detail = await bridge.sourceTopic(work.topic_id);
+        const item = detail?.eligible === true ? detail.source_topic : null;
+        if (!item || item.source_revision !== work.source_revision || item.publication_revision !== work.publication_revision) {
+          throw new Error("Claimed Ghost source revision changed");
+        }
+        result = await materializeTopic(config, store, bridge, ghost, item);
+      } else {
+        if (!UUID.test(work.resource_id ?? "")) throw new Error("Invalid Ghost publication withdrawal claim");
+        const detail = await bridge.sourceRevocation(work.resource_id);
+        const item = detail?.revoked === true ? detail.publication_revocation : null;
+        if (!item || item.topic_id !== work.topic_id || item.publication_revision !== work.publication_revision) {
+          throw new Error("Claimed Ghost publication withdrawal changed");
+        }
+        result = await applyRevocation(store, bridge, ghost, item);
+      }
+      summary[result.outcome] += 1;
+    } catch (error) {
+      const detail = String(error?.message ?? error).replace(/[\u0000-\u001f\u007f]/gu, " ").slice(0, 1000);
+      const rawCode = typeof error?.reason === "string" ? error.reason : "ghost_delivery_failed";
+      const errorCode = rawCode.toLowerCase().replace(/[^a-z0-9_-]+/gu, "_").replace(/^_+|_+$/gu, "").slice(0, 64) || "ghost_delivery_failed";
+      try { await bridge.failPublicationWork(errorCode, detail); }
+      catch (reportError) { summary.errors.push({ topic_id: work?.topic_id, reason: String(reportError?.message ?? reportError).slice(0, 240) }); }
+      summary.failed += 1;
+      summary.errors.push({ topic_id: work?.topic_id, reason: detail.slice(0, 240) });
+    } finally {
+      bridge.clearPublicationLease();
+    }
+  }
   return summary;
 }
 

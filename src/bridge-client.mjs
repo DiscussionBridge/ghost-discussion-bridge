@@ -59,6 +59,7 @@ export class BridgeClient {
   constructor(config, fetchImplementation = fetch) {
     this.config = config;
     this.fetch = fetchImplementation;
+    this.publicationLeaseToken = null;
   }
 
   async resolve(record) {
@@ -109,6 +110,38 @@ export class BridgeClient {
     return this.request("GET", `/discussion-bridge/v1/source-revocations/${encodeURIComponent(resourceId)}.json`);
   }
 
+  async claimPublicationWork(leaseSeconds = 300) {
+    this.publicationLeaseToken = null;
+    if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 300 || leaseSeconds > 3600) throw new Error("Invalid publication lease duration");
+    const response = await this.request("POST", "/discussion-bridge/v1/publication-work/claim.json", { lease_seconds: leaseSeconds });
+    const work = response?.publication_work;
+    if (work === null) return response;
+    if (!work || !Number.isSafeInteger(work.topic_id) || work.topic_id <= 0 ||
+        !["publish", "unpublish"].includes(work.action) || !/^[a-f0-9]{64}$/u.test(work.lease_token ?? "")) {
+      throw new Error("Invalid publication work claim");
+    }
+    this.publicationLeaseToken = work.lease_token;
+    return response;
+  }
+
+  async failPublicationWork(errorCode, errorDetail = "") {
+    if (!/^[a-f0-9]{64}$/u.test(this.publicationLeaseToken ?? "") ||
+        !/^[a-z0-9_-]{1,64}$/u.test(errorCode) || Buffer.byteLength(errorDetail) > 1000) {
+      throw new Error("Invalid publication failure");
+    }
+    return this.request("PUT", "/discussion-bridge/v1/publication-work/failure.json", {
+      publication_work_failure: {
+        lease_token: this.publicationLeaseToken,
+        error_code: errorCode,
+        error_detail: errorDetail,
+      },
+    });
+  }
+
+  clearPublicationLease() {
+    this.publicationLeaseToken = null;
+  }
+
   async resolveSourceTopic(topicId, publication) {
     if (!Number.isSafeInteger(topicId) || topicId <= 0) throw new Error("Invalid topic ID");
     return this.request("POST", `/discussion-bridge/v1/source-topics/${topicId}/resolve.json`, { publication });
@@ -116,7 +149,12 @@ export class BridgeClient {
 
   async acknowledgePublication(resourceId, acknowledgement) {
     if (!UUID.test(resourceId)) throw new Error("Invalid resource ID");
-    return this.request("PUT", `/discussion-bridge/v1/bridge-records/${encodeURIComponent(resourceId)}/acknowledgement.json`, { acknowledgement });
+    return this.request("PUT", `/discussion-bridge/v1/bridge-records/${encodeURIComponent(resourceId)}/acknowledgement.json`, {
+      acknowledgement: {
+        ...acknowledgement,
+        ...(this.publicationLeaseToken ? { lease_token: this.publicationLeaseToken } : {}),
+      },
+    });
   }
 
   async publicTopic(topicId) {
