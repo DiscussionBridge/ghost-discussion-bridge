@@ -118,11 +118,15 @@ function publicationPlan(item, detail, config) {
 }
 
 function exactNative(post, plan, config) {
-  if (!post || !GHOST_ID.test(post.id ?? "") || safeUrl(post.url, config.ghostOrigin, "Ghost publication URL") !== post.url) {
-    throw new Error("Ghost publication identity drift");
-  }
+  if (!post || !GHOST_ID.test(post.id ?? "")) throw new Error("Ghost publication identity drift");
   if (!hasTag(post, plan.topicTag)) throw new Error("Ghost publication topic marker drift");
-  return post;
+  const slug = bounded(post.slug, 191, "Ghost publication slug");
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)) throw new Error("Ghost publication slug drift");
+  const canonicalUrl = new URL(`${slug}/`, `${config.ghostOrigin}/`).href;
+  if (post.status === "published" && post.url !== canonicalUrl) {
+    throw new Error("Ghost publication route differs from the registered platform route");
+  }
+  return { ...post, url: canonicalUrl };
 }
 
 function resourceTag(resourceId) {
