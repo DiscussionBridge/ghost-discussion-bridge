@@ -42,7 +42,7 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.31", "0.1.0-alpha.99"));
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.32", "0.1.0-alpha.99"));
   assert.match(upgraded, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
@@ -135,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.31");
+  assert.equal(record.adapter_version, "0.2.0-alpha.32");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -391,6 +391,7 @@ test("reader loader offers simple, full, and Interactive mapped comments", async
   assert.match(loader, /embedHeight: "800px"/);
   assert.match(loader, /dynamicHeight: false/);
   assert.match(loader, /embedMinHeight: "360"/);
+  assert.match(loader, /\.gh-content \.md-table/);
   assert.match(loader, /aria-label", "On this page"/);
   assert.match(loader, /const nativeArticle = document\.querySelector\("\.gh-content"\)/);
   assert.match(loader, /tag-hash-discussionbridge-source/);
@@ -719,6 +720,16 @@ test("Ghost catalog reports native posts, pages, operator tags, and its service 
   assert.equal(catalog.inventory.terms_complete, true);
 });
 
+test("portable rich-content renderer covers Discourse tables, Mermaid, and math", async () => {
+  const renderer = await readFile(new URL("../src/browser-rich-content.mjs", import.meta.url), "utf8");
+  assert.match(renderer, /code\.lang-mermaid/);
+  assert.match(renderer, /securityLevel: "strict"/);
+  assert.match(renderer, /\.math:not\(\.katex\)/);
+  assert.match(renderer, /output: "mathml"/);
+  assert.match(renderer, /\\\$\\\$\(\[\\s\\S\]\*\?\)\\\$\\\$/);
+  assert.match(renderer, /\.md-table\{max-width:100%;overflow-x:auto\}/);
+});
+
 test("forum publication synchronization creates once, acknowledges, and exact retry is unchanged", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
@@ -899,7 +910,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.31");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.32");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 
