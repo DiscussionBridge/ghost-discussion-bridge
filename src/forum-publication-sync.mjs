@@ -389,10 +389,9 @@ export async function syncForumPublications(config, store, bridge, ghost) {
   return summary;
 }
 
-export async function syncQueuedForumPublications(config, store, bridge, ghost, maximum = 20) {
+export async function syncQueuedForumPublications(config, store, bridge, ghost, maximum = 10) {
   if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 20) throw new Error("Invalid publication work limit");
-  const catalog = await bridge.platformCatalogStatus();
-  if (catalog?.destination_mapping_state !== "current") throw new Error("Ghost destination mapping requires operator configuration");
+  await updateCatalog(bridge, ghost);
   const summary = { created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [] };
 
   for (let index = 0; index < maximum; index++) {

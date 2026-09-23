@@ -42,7 +42,7 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.33", "0.1.0-alpha.99"));
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.34", "0.1.0-alpha.99"));
   assert.match(upgraded, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
@@ -135,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.33");
+  assert.equal(record.adapter_version, "0.2.0-alpha.34");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -786,6 +786,44 @@ test("incremental publication queue claims and acknowledges the exact Ghost item
   assert.equal(remote[0].published_at, summary.source_created_at);
 });
 
+test("incremental publication queue applies the rate-safe default batch ceiling", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, detail, ghost, resourceId, summary } = forumSyncHarness();
+  let claims = 0;
+  bridge.claimPublicationWork = async () => {
+    claims += 1;
+    return { publication_work: {
+      topic_id: summary.topic_id,
+      resource_id: null,
+      action: "publish",
+      source_revision: summary.source_revision,
+      publication_revision: summary.publication_revision,
+      lease_token: "c".repeat(64),
+      lease_expires_at: "2026-09-20T16:05:00.000000Z",
+    } };
+  };
+  bridge.clearPublicationLease = () => {};
+  bridge.failPublicationWork = async () => { throw new Error("must not report failure"); };
+  const acknowledge = bridge.acknowledgePublication;
+  bridge.acknowledgePublication = async (...args) => {
+    const response = await acknowledge(...args);
+    summary.publication = {
+      resource_id: resourceId,
+      destination_state: "healthy",
+      acknowledged_publication_revision: summary.publication_revision,
+      canonical_url: "https://ghost.example/forum-topic-53/",
+    };
+    detail.publication = summary.publication;
+    return response;
+  };
+  const result = await syncQueuedForumPublications(cfg, store, bridge, ghost);
+  assert.equal(claims, 10);
+  assert.equal(result.created, 1);
+  assert.equal(result.unchanged, 9);
+  assert.equal(result.failed, 0);
+});
+
 test("forum publication synchronization adopts a uniquely marked draft after a lost create response", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
@@ -912,7 +950,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.33");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.34");
   assert.match(remote[0].html, /Published with <a href="https:\/\/discussionbridge\.dev\/">DiscussionBridge<\/a> from the <a href="https:\/\/forum\.example\/t\/the-bridge-publishes-everywhere\/53">Repeal OBBBA Forum<\/a>/u);
   assert.doesNotMatch(remote[0].html, />The Bridge<\/a>/u);
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
