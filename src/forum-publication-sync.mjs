@@ -7,6 +7,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const GHOST_ID = /^[a-f0-9]{24}$/iu;
 const REVISION = /^[a-f0-9]{64}$/u;
 const MAX_CURSOR_BYTES = 8_192;
+const ADAPTER_ID = "ghost-discussion-bridge";
 
 function bounded(value, maximum, label) {
   if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value) > maximum || /[\u0000-\u001f\u007f]/u.test(value)) {
@@ -327,10 +328,12 @@ async function applyRevocation(store, bridge, ghost, item) {
 
 async function updateCatalog(bridge, ghost) {
   const current = await bridge.platformCatalogStatus();
+  const adapterChanged = Boolean(current?.catalog_adapter_id) &&
+    (current.catalog_adapter_id !== ADAPTER_ID || current.catalog_adapter_version !== PRODUCT_VERSION);
   const catalog = await buildPlatformCatalog(ghost);
   const updated = await bridge.updatePlatformCatalog(catalog, current?.catalog_revision || undefined);
   if (updated?.destination_mapping_state !== "current") throw new Error("Ghost destination mapping requires operator configuration");
-  return updated;
+  return { ...updated, adapter_changed: adapterChanged };
 }
 
 function nextCursor(payload) {
@@ -346,8 +349,9 @@ function nextCursor(payload) {
 }
 
 export async function syncForumPublications(config, store, bridge, ghost) {
-  await updateCatalog(bridge, ghost);
   const summary = { created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [] };
+  const catalog = await updateCatalog(bridge, ghost);
+  if (catalog.adapter_changed) return summary;
   const seenTopics = new Set();
   let cursor;
   do {
@@ -389,13 +393,20 @@ export async function syncForumPublications(config, store, bridge, ghost) {
   return summary;
 }
 
-export async function syncQueuedForumPublications(config, store, bridge, ghost, maximum = 10) {
+export async function syncQueuedForumPublications(config, store, bridge, ghost, maximum = 8) {
   if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 20) throw new Error("Invalid publication work limit");
-  await updateCatalog(bridge, ghost);
   const summary = { created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [] };
+  const catalog = await updateCatalog(bridge, ghost);
+  if (catalog.adapter_changed) return summary;
 
   for (let index = 0; index < maximum; index++) {
-    const claimed = await bridge.claimPublicationWork(300);
+    let claimed;
+    try {
+      claimed = await bridge.claimPublicationWork(300);
+    } catch (error) {
+      if (error?.status === 429) break;
+      throw error;
+    }
     const work = claimed?.publication_work;
     if (work === null) break;
     try {
