@@ -26,14 +26,29 @@ runs as a small loopback-only Node service beside Ghost.
   post remains the article and is not repeated in the discussion frame; its
   replies, session and reply controls remain owned by Discourse. A validated
   topic identity is required before either presentation is exposed.
-- A From Discourse binding may separately authorize **native
-  materialization**. `npm run sync:publications` then creates or updates a
-  genuine Ghost post through Ghost's Admin API. Presentation-only records are
-  ignored. The adapter stores the Discourse post revision and Ghost post ID,
-  so an exact retry is unchanged and a later first-post revision updates the
-  same Ghost post. The native post carries a source/provenance note and its
-  mapped Interactive discussion; it is tagged `#discussionbridge-source`,
-  not the outbound `#discussionbridge` opt-in, preventing a publication loop.
+- When the connection enables forum publication, the adapter registers Ghost's
+  native Posts, Pages and Tags with the receiver, then consumes the receiver's
+  bounded source-topic and revocation feeds. The forum operator chooses the
+  eligible categories and tags and maps them to the real Ghost destination;
+  the adapter owns the cursor, native persistence, retry and failure behavior.
+  `npm run sync:publications` is the explicit initial/backfill operation. It
+  drafts a uniquely topic-marked Ghost item before
+  reserving its Bridge Record, publishes only after the exact resource/topic/
+  destination tuple is durable, and acknowledges the exact source, mapping and
+  publication revisions. An unchanged rerun adopts the same native item and
+  creates no duplicate. A changed first post updates it; a topic that becomes
+  ineligible or unmapped is returned to draft and reported as held. The native
+  item carries a source/provenance note and mapped Interactive discussion. It
+  is tagged `#discussionbridge-source`, not the outbound `#discussionbridge`
+  opt-in, preventing a publication loop.
+  After that initial pass completes, `npm run sync:publication-work` is the
+  steady-state worker: it claims at most 20 receiver-owned work items with an
+  exact five-minute lease, materializes or drafts the one identified native
+  item, acknowledges only against that lease, and reports bounded failures to
+  the receiver for shared attention/retry handling. It does not rescan the
+  whole forum. The original Discourse topic creation time becomes Ghost's
+  `published_at`; later first-post changes update the same item without
+  rewriting its publication date.
 - Published Ghost posts can render their exact mapped Discourse discussion.
   The same-origin loader resolves the current canonical Ghost URL through the
   adapter's nonsecret comments endpoint, then starts Discourse's standard
@@ -66,14 +81,14 @@ runs as a small loopback-only Node service beside Ghost.
   article headings; for From Discourse pages it waits for the sanitized forum
   content and builds the same navigation from that content.
 - The same locally bundled loader renders Mermaid diagrams and inline or block
-  math in both directions. No browser request to a third-party renderer or CDN
-  is required; the companion stylesheet and font data ship with the adapter.
+  math in both directions, and keeps Discourse table wrappers usable on narrow
+  screens. No browser request to a third-party renderer or CDN is required;
+  the renderer ships with the adapter.
 
 Bridge and webhook secrets live in root-protected files. They are never
 accepted through public JSON, returned in responses, or written to the state
 file. The service binds only to loopback. It does not implement Ghost-to-forum
-edit/delete synchronization, forum deletion propagation, or a generic control
-plane.
+edit/delete synchronization or a generic control plane.
 
 ## Operator status
 
@@ -136,17 +151,12 @@ ownership still existed and a retry remains idempotent. On non-Linux
 development hosts, the portable hard-link fallback preserves mutual exclusion
 but intentionally does not reclaim locks after a process crash.
 
-Native From Discourse publication uses a durable local intent before calling
-Ghost and places the Bridge Record resource UUID and hashed source revision in
-internal Ghost tags. The readable source revision remains in the generated
-article provenance, but Ghost normalizes that authored HTML and the internal
-tags are the machine identity. A lost create or update response is
-reconciled by that exact marker, canonical URL, slug and source revision before
-local completion is recorded. Concurrent workers wait on the current intent.
-After a crashed create intent expires, exactly one marked Ghost post may be
-adopted; no marker requires operator reconciliation and multiple markers fail
-closed. The adapter never repeats an uncertain create merely because its local
-completion record is missing.
+Forum publication places the Discourse topic ID, publication revision and
+Bridge Record resource UUID in internal Ghost tags. The topic marker exists on
+the initial draft, so a lost Ghost create response is adopted rather than
+repeated. The resource and revision markers prove later updates and exact
+retries. One global synchronization lease prevents concurrent runs; no marker
+or multiple matching markers fails closed for operator reconciliation.
 
 Simple mode presents the forum-controlled official Discourse attribution and
 the independent **Connected by DiscussionBridge** credit as separate lines.

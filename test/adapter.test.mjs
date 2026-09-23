@@ -11,7 +11,9 @@ import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
 import { isInteractiveCommentsMode, normalizeCommentsMode } from "../src/comments-mode.mjs";
 import { ghostAdminToken } from "../src/ghost-admin-client.mjs";
+import { publicationPlan, syncForumPublications, syncQueuedForumPublications } from "../src/forum-publication-sync.mjs";
 import { installRichContent, mergeCodeInjection } from "../src/install-rich-content.mjs";
+import { buildPlatformCatalog } from "../src/platform-catalog.mjs";
 import { runPublicationSynchronization } from "../src/publication-operations.mjs";
 import { nativePublication, syncPublications } from "../src/publication-sync.mjs";
 import { assertStateStoreRuntimePrerequisites, StateStore } from "../src/state-store.mjs";
@@ -37,11 +39,11 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.2\.0-alpha\.25/);
+  assert.match(script, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.25", "0.1.0-alpha.99"));
-  assert.match(upgraded, /0\.2\.0-alpha\.25/);
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.32", "0.1.0-alpha.99"));
+  assert.match(upgraded, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
   assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
@@ -133,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.25");
+  assert.equal(record.adapter_version, "0.2.0-alpha.32");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -197,6 +199,62 @@ test("webhook resolves once and persists no secret", async () => {
   } finally { server.close(); }
 });
 
+test("publication work lease is exact and is carried only on its acknowledgement", async () => {
+  const cfg = await config();
+  const requests = [];
+  const leaseToken = "c".repeat(64);
+  const client = new BridgeClient(cfg, async (url, options) => {
+    requests.push({ url, options });
+    const payload = url.endsWith("/publication-work/claim.json")
+      ? { publication_work: { topic_id: 53, action: "publish", lease_token: leaseToken } }
+      : { resource_id: "33333333-3333-4333-8333-333333333333" };
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  await client.claimPublicationWork(300);
+  await client.acknowledgePublication("33333333-3333-4333-8333-333333333333", { outcome: "published" });
+  assert.deepEqual(JSON.parse(requests[0].options.body), { lease_seconds: 300 });
+  assert.equal(JSON.parse(requests[1].options.body).acknowledgement.lease_token, leaseToken);
+  client.clearPublicationLease();
+  await client.acknowledgePublication("33333333-3333-4333-8333-333333333333", { outcome: "unchanged" });
+  assert.equal(Object.hasOwn(JSON.parse(requests[2].options.body).acknowledgement, "lease_token"), false);
+});
+
+test("a Ghost URL move cannot replace the stored Bridge Record or topic", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  let calls = 0;
+  const client = { resolve: async () => {
+    calls++;
+    return { outcome: calls === 1 ? "created" : "resolved", resource_id: calls === 2
+      ? "22222222-2222-4222-8222-222222222222" : "11111111-1111-4111-8111-111111111111",
+      topic_id: calls === 2 ? 43 : 42, topic_url: `https://forum.example/t/x/${calls === 2 ? 43 : 42}`,
+      core_fallback: false };
+  } };
+  const server = buildServer(cfg, store, client);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const send = async (url) => {
+      const body = JSON.stringify({ post: { current: { id: "abc", title: "Article", html: "<p>Ghost content.</p>",
+        url, status: "published", tags: [{ name: "#discussionbridge" }] } } });
+      const timestamp = String(Date.now());
+      const signature = createHmac("sha256", "w".repeat(32)).update(`${body}${timestamp}`).digest("hex");
+      return fetch(`http://127.0.0.1:${server.address().port}/webhooks/ghost`, { method: "POST",
+        headers: { "Content-Type": "application/json", "X-Ghost-Signature": `sha256=${signature}, t=${timestamp}` }, body });
+    };
+    assert.equal((await send("https://ghost.example/article/")).status, 200);
+    assert.equal((await send("https://ghost.example/article-moved/")).status, 502);
+    const post = (await store.read()).posts["ghost-post:abc"];
+    assert.equal(post.resource_id, "11111111-1111-4111-8111-111111111111");
+    assert.equal(post.topic_id, 42);
+    assert.equal(post.canonical_url, "https://ghost.example/article/");
+    assert.equal((await send("https://ghost.example/article-moved/")).status, 200);
+    const moved = (await store.read()).posts["ghost-post:abc"];
+    assert.equal(moved.resource_id, post.resource_id);
+    assert.equal(moved.topic_id, post.topic_id);
+    assert.equal(moved.canonical_url, "https://ghost.example/article-moved/");
+  } finally { server.close(); }
+});
+
 test("operator status is protected, credential-free, and synchronizes with a bounded anti-CSRF token", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
@@ -207,7 +265,7 @@ test("operator status is protected, credential-free, and synchronizes with a bou
     publications: { "22222222-2222-4222-8222-222222222222": { ghost_post_id: "a".repeat(24), canonical_url: "https://ghost.example/native/", revision: "post:2:version:1", topic_id: 43, topic_url: "https://forum.example/t/native/43", state: "complete", synchronized_at: "2026-09-15T00:01:00.000Z" } },
   });
   let synchronizations = 0;
-  const server = buildServer(cfg, store, {}, { synchronize: async () => { synchronizations += 1; return { created: 0, updated: 0, unchanged: 1, skipped: 1, failed: 0, errors: [] }; } });
+  const server = buildServer(cfg, store, {}, { synchronize: async () => { synchronizations += 1; return { created: 0, updated: 0, unchanged: 1, held: 1, unpublished: 0, failed: 0, errors: [] }; } });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const origin = `http://127.0.0.1:${server.address().port}`;
@@ -223,7 +281,7 @@ test("operator status is protected, credential-free, and synchronizes with a bou
     assert.match(html, /ghost-post:abc/u);
     assert.match(html, /Existing Discourse topic found/u);
     assert.match(html, /Ghost post created/u);
-    assert.match(html, /Synchronize publications/u);
+    assert.match(html, /Synchronize eligible forum topics/u);
     assert.doesNotMatch(html, new RegExp(`${"s".repeat(32)}|${"w".repeat(32)}|${"a".repeat(24)}:${"b".repeat(64)}|${"o".repeat(32)}`));
     const csrf = /name="csrf" value="([a-f0-9]{64})"/u.exec(html)?.[1];
     assert.ok(csrf);
@@ -237,7 +295,7 @@ test("operator status is protected, credential-free, and synchronizes with a bou
     const resultPage = await fetch(`${origin}/operator/`, { headers: { Authorization: authorization, Cookie: noticeCookie } });
     assert.equal(resultPage.status, 200);
     assert.match(resultPage.headers.get("set-cookie") ?? "", /Max-Age=0/u);
-    assert.match(await resultPage.text(), /0 created, 0 updated, 1 already current, 0 failed/u);
+    assert.match(await resultPage.text(), /0 created, 0 updated, 1 already current, 1 held, 0 unpublished, 0 failed/u);
     const refreshedPage = await fetch(`${origin}/operator/`, { headers: { Authorization: authorization } });
     assert.doesNotMatch(await refreshedPage.text(), /Synchronization complete:/u);
     assert.equal(synchronizations, 1);
@@ -333,6 +391,7 @@ test("reader loader offers simple, full, and Interactive mapped comments", async
   assert.match(loader, /embedHeight: "800px"/);
   assert.match(loader, /dynamicHeight: false/);
   assert.match(loader, /embedMinHeight: "360"/);
+  assert.match(loader, /\.gh-content \.md-table/);
   assert.match(loader, /aria-label", "On this page"/);
   assert.match(loader, /const nativeArticle = document\.querySelector\("\.gh-content"\)/);
   assert.match(loader, /tag-hash-discussionbridge-source/);
@@ -579,6 +638,227 @@ for (const phase of ["before-read", "after-read", "after-write", "after-sync", "
   });
 }
 
+function forumSourceTopic(overrides = {}) {
+  const destination = {
+    state: "ready", reasons: [], catalog_revision: "b".repeat(64), mapping_revision: "c".repeat(64),
+    destination_container_id: "post",
+    destination_terms: [{ source_tag_id: 7, destination_taxonomy_id: "tag", destination_term_id: `tag:${"d".repeat(24)}` }],
+    presentation_mode: "native", authorship_policy: "service_author", destination_author_id: "ghost:service",
+    slug_policy: "topic_id", limits: { content_bytes: 49_152, title_bytes: 1_000, slug_bytes: 191 },
+  };
+  return {
+    topic_id: 53,
+    topic_url: "https://forum.example/t/forum-scale-canary/53",
+    title: "Forum scale canary",
+    source_revision: "post:149:version:1",
+    content_bytes: 39,
+    source_created_at: "2026-09-19T15:00:00.000000Z",
+    source_updated_at: "2026-09-20T16:00:00.000000Z",
+    category: { id: 6, slug: "forum-scale-canary", name: "Forum Scale Canary" },
+    tags: [{ id: 7, slug: "policy", name: "policy" }],
+    author: { username: "discussionbridge", name: "DiscussionBridge", profile_url: "https://forum.example/u/discussionbridge" },
+    publication: null,
+    publication_revision: "a".repeat(64),
+    destination,
+    ...overrides,
+  };
+}
+
+function forumSyncHarness() {
+  const summary = forumSourceTopic();
+  const detail = { ...summary, content_html: "<h2>One forum</h2><p>Seven sites.</p>" };
+  const remote = [];
+  const resourceId = "33333333-3333-4333-8333-333333333333";
+  const bridge = {
+    platformCatalogStatus: async () => ({ catalog_revision: null, destination_mapping_state: "current" }),
+    updatePlatformCatalog: async () => ({ destination_mapping_state: "current" }),
+    sourceTopics: async () => ({ source_topics: [summary], pagination: { complete: true, next_cursor: null } }),
+    sourceTopic: async () => ({ eligible: true, source_topic: detail }),
+    resolveSourceTopic: async (_topicId, publication) => ({
+      outcome: "created", resource_id: resourceId,
+      external_id: publication.external_id, canonical_url: publication.canonical_url,
+      pending_publication_revision: summary.publication_revision,
+      pending_mapping_revision: summary.destination.mapping_revision,
+    }),
+    acknowledgePublication: async (_resourceId, acknowledgement) => ({
+      resource_id: resourceId,
+      destination_state: ["held", "unpublished"].includes(acknowledgement.outcome) ? "held" : "healthy",
+      acknowledged_publication_revision: summary.publication_revision,
+    }),
+    sourceRevocations: async () => ({ publication_revocations: [], pagination: { complete: true, next_cursor: null } }),
+  };
+  const ghost = {
+    listTags: async () => [{ id: "d".repeat(24), name: "Policy" }],
+    findByTopic: async () => remote,
+    create: async (post) => {
+      const created = { ...post, id: "e".repeat(24), url: `https://ghost.example/p/${"f".repeat(24)}/`, updated_at: "2026-09-20T16:01:00.000Z" };
+      remote.push(created);
+      return created;
+    },
+    update: async (_id, post) => {
+      remote[0] = { ...remote[0], ...post, url: `https://ghost.example/${post.slug ?? remote[0].slug}/`, updated_at: "2026-09-20T16:02:00.000Z" };
+      return remote[0];
+    },
+    get: async () => remote[0],
+  };
+  return { bridge, detail, ghost, remote, resourceId, summary };
+}
+
+test("Ghost catalog reports native posts, pages, operator tags, and its service author", async () => {
+  const catalog = await buildPlatformCatalog({ listTags: async () => [
+    { id: "d".repeat(24), name: "Policy" },
+    { id: "e".repeat(24), name: "#discussionbridge-revision-internal" },
+    { id: "f".repeat(24), name: "#DiscussionBridge-resource-internal" },
+  ] });
+  assert.equal(catalog.platform, "ghost");
+  assert.deepEqual(catalog.containers.map(({ id }) => id), ["post", "page"]);
+  assert.equal(catalog.taxonomies[0].terms.length, 1);
+  assert.equal(catalog.taxonomies[0].terms[0].id, `tag:${"d".repeat(24)}`);
+  assert.equal(catalog.inventory.terms_observed, 1);
+  assert.equal(catalog.service_author_id, "ghost:service");
+  assert.equal(catalog.limits.title_bytes, 255);
+  assert.equal(catalog.inventory.terms_complete, true);
+});
+
+test("portable rich-content renderer covers Discourse tables, Mermaid, and math", async () => {
+  const renderer = await readFile(new URL("../src/browser-rich-content.mjs", import.meta.url), "utf8");
+  assert.match(renderer, /code\.lang-mermaid/);
+  assert.match(renderer, /securityLevel: "strict"/);
+  assert.match(renderer, /\.math:not\(\.katex\)/);
+  assert.match(renderer, /output: "mathml"/);
+  assert.match(renderer, /\\\$\\\$\(\[\\s\\S\]\*\?\)\\\$\\\$/);
+  assert.match(renderer, /\.md-table\{max-width:100%;overflow-x:auto\}/);
+});
+
+test("forum publication synchronization creates once, acknowledges, and exact retry is unchanged", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, detail, ghost, remote, resourceId, summary } = forumSyncHarness();
+  assert.deepEqual(await syncForumPublications(cfg, store, bridge, ghost), {
+    created: 1, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [],
+  });
+  summary.publication = {
+    resource_id: resourceId, destination_state: "healthy",
+    acknowledged_publication_revision: summary.publication_revision,
+    canonical_url: remote[0].url,
+  };
+  detail.publication = summary.publication;
+  assert.deepEqual(await syncForumPublications(cfg, store, bridge, ghost), {
+    created: 0, updated: 0, unchanged: 1, held: 0, unpublished: 0, failed: 0, errors: [],
+  });
+  assert.equal(remote.length, 1);
+  assert.equal(remote[0].status, "published");
+  assert.equal((await store.read()).forum_publications["53"].canonical_url, "https://ghost.example/forum-topic-53/");
+  assert.equal(hasOwn(await store.read(), "forum_publications"), true);
+  assert.equal((await store.read()).forum_publications["53"].resource_id, resourceId);
+  assert.equal(remote[0].published_at, summary.source_created_at);
+});
+
+test("incremental publication queue claims and acknowledges the exact Ghost item once", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, ghost, remote, summary } = forumSyncHarness();
+  let claims = 0;
+  let cleared = 0;
+  bridge.claimPublicationWork = async (leaseSeconds) => {
+    assert.equal(leaseSeconds, 300);
+    claims += 1;
+    return { publication_work: claims === 1 ? {
+      topic_id: summary.topic_id,
+      resource_id: null,
+      action: "publish",
+      source_revision: summary.source_revision,
+      publication_revision: summary.publication_revision,
+      lease_token: "c".repeat(64),
+      lease_expires_at: "2026-09-20T16:05:00.000000Z",
+    } : null };
+  };
+  bridge.clearPublicationLease = () => { cleared += 1; };
+  bridge.failPublicationWork = async () => { throw new Error("must not report failure"); };
+  assert.deepEqual(await syncQueuedForumPublications(cfg, store, bridge, ghost), {
+    created: 1, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [],
+  });
+  assert.equal(claims, 2);
+  assert.equal(cleared, 1);
+  assert.equal(remote.length, 1);
+  assert.equal(remote[0].published_at, summary.source_created_at);
+});
+
+test("forum publication synchronization adopts a uniquely marked draft after a lost create response", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, ghost, remote } = forumSyncHarness();
+  const create = ghost.create;
+  ghost.create = async (...args) => {
+    await create(...args);
+    throw new Error("Synthetic lost Ghost create response");
+  };
+  assert.deepEqual(await syncForumPublications(cfg, store, bridge, ghost), {
+    created: 1, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [],
+  });
+  assert.equal(remote.length, 1);
+  assert.equal(remote[0].status, "published");
+});
+
+test("forum publication synchronization retries acknowledgement without duplicating native content", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, ghost, remote } = forumSyncHarness();
+  const acknowledge = bridge.acknowledgePublication;
+  let first = true;
+  bridge.acknowledgePublication = async (...args) => {
+    if (first) {
+      first = false;
+      throw new Error("Synthetic acknowledgement interruption");
+    }
+    return acknowledge(...args);
+  };
+  const interrupted = await syncForumPublications(cfg, store, bridge, ghost);
+  assert.equal(interrupted.failed, 1);
+  assert.equal(remote.length, 1);
+  assert.deepEqual(await syncForumPublications(cfg, store, bridge, ghost), {
+    created: 0, updated: 1, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [],
+  });
+  assert.equal(remote.length, 1);
+});
+
+test("forum publication synchronization drafts and acknowledges an established unmapped topic", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, detail, ghost, remote, resourceId, summary } = forumSyncHarness();
+  await syncForumPublications(cfg, store, bridge, ghost);
+  summary.publication = { resource_id: resourceId, destination_state: "healthy", canonical_url: remote[0].url };
+  detail.publication = summary.publication;
+  summary.destination = { ...summary.destination, state: "attention", reasons: ["destination_category_unmapped"] };
+  detail.destination = summary.destination;
+  assert.deepEqual(await syncForumPublications(cfg, store, bridge, ghost), {
+    created: 0, updated: 0, unchanged: 0, held: 1, unpublished: 0, failed: 0, errors: [],
+  });
+  assert.equal(remote[0].status, "draft");
+  assert.equal((await store.read()).forum_publications["53"].state, "held");
+});
+
+test("forum publication revocation drafts the same Ghost item and acknowledges the hold", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, ghost, remote, resourceId, summary } = forumSyncHarness();
+  await syncForumPublications(cfg, store, bridge, ghost);
+  bridge.sourceTopics = async () => ({ source_topics: [], pagination: { complete: true, next_cursor: null } });
+  bridge.sourceRevocations = async () => ({
+    publication_revocations: [{ resource_id: resourceId, topic_id: 53, publication_revision: summary.publication_revision }],
+    pagination: { complete: true, next_cursor: null },
+  });
+  assert.deepEqual(await syncForumPublications(cfg, store, bridge, ghost), {
+    created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 1, failed: 0, errors: [],
+  });
+  assert.equal(remote[0].status, "draft");
+  assert.equal((await store.read()).forum_publications["53"].state, "held");
+});
+
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
 function publicationRecord(overrides = {}) {
   return {
     resource_id: "11111111-1111-4111-8111-111111111111",
@@ -630,7 +910,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.25");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.32");
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 
@@ -713,14 +993,20 @@ test("verified URL migration adopts the same already-moved Ghost post", async ()
 test("publication operation persists operator-visible totals and redacts protected values", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
-  const bridge = { records: async () => ({ bridge_records: [], pagination: { page: 1, pages: 1, total: 0, snapshot: "snapshot-one" } }) };
-  assert.deepEqual(await runPublicationSynchronization(cfg, store, bridge, {}), { created: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0, errors: [] });
+  const bridge = {
+    platformCatalogStatus: async () => ({ catalog_revision: null }),
+    updatePlatformCatalog: async () => ({ destination_mapping_state: "current" }),
+    sourceTopics: async () => ({ source_topics: [], pagination: { complete: true, next_cursor: null } }),
+    sourceRevocations: async () => ({ publication_revocations: [], pagination: { complete: true, next_cursor: null } }),
+  };
+  const ghost = { listTags: async () => [] };
+  assert.deepEqual(await runPublicationSynchronization(cfg, store, bridge, ghost), { created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [] });
   let state = await store.read();
   assert.equal(state.publication_sync.state, "complete");
   assert.equal(state.publication_sync.summary.failed, 0);
 
-  const failing = { records: async () => { throw new Error(`Failure ${cfg.connectionSecret}`); } };
-  await assert.rejects(() => runPublicationSynchronization(cfg, store, failing, {}), /Failure/u);
+  const failing = { platformCatalogStatus: async () => { throw new Error(`Failure ${cfg.connectionSecret}`); } };
+  await assert.rejects(() => runPublicationSynchronization(cfg, store, failing, ghost), /Failure/u);
   state = await store.read();
   assert.equal(state.publication_sync.state, "attention");
   assert.equal(state.publication_sync.summary.failed, 1);

@@ -1,15 +1,16 @@
 {
   "name": "ghost-discussion-bridge",
-  "version": "0.2.0-alpha.25",
+  "version": "0.2.0-alpha.32",
   "private": true,
   "type": "module",
   "scripts": {
     "build:browser": "node scripts/build-browser.mjs",
     "start": "node src/index.mjs",
     "sync:publications": "node src/sync-publications.mjs",
+    "sync:publication-work": "node src/sync-publication-work.mjs",
     "install:rich-content": "node src/install-rich-content.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "npm run build:browser && node --check src/version.mjs && node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/ghost-admin-client.mjs && node --check src/install-rich-content.mjs && node --check src/operator-surface.mjs && node --check src/publication-operations.mjs && node --check src/publication-sync.mjs && node --check src/sync-publications.mjs && node --check src/state-store.mjs && node --check src/state-transaction-worker.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check src/browser-loader.mjs && node --check public/discussionbridge-loader.js"
+    "check": "npm run build:browser && node --check src/version.mjs && node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/ghost-admin-client.mjs && node --check src/install-rich-content.mjs && node --check src/operator-surface.mjs && node --check src/platform-catalog.mjs && node --check src/forum-publication-sync.mjs && node --check src/publication-operations.mjs && node --check src/publication-sync.mjs && node --check src/sync-publications.mjs && node --check src/sync-publication-work.mjs && node --check src/state-store.mjs && node --check src/state-transaction-worker.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check src/browser-loader.mjs && node --check public/discussionbridge-loader.js"
   },
   "dependencies": {
     "sanitize-html": "2.17.7"
