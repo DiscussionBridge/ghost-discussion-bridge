@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import sanitizeHtml from "sanitize-html";
 import { PRODUCT_VERSION } from "./version.mjs";
-import { buildPlatformCatalog } from "./platform-catalog.mjs";
+import { buildPlatformCatalog, MAX_FORUM_PUBLICATION_HTML_BYTES } from "./platform-catalog.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const GHOST_ID = /^[a-f0-9]{24}$/iu;
@@ -73,7 +73,7 @@ function slugFor(destination, title, topicId) {
 }
 
 function sanitizeSource(value) {
-  if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value) > 49_152) throw new Error("Invalid source content");
+  if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value) > MAX_FORUM_PUBLICATION_HTML_BYTES) throw new Error("Invalid source content");
   const html = sanitizeHtml(value, {
     allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
     allowedAttributes: {
