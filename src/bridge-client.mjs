@@ -235,11 +235,19 @@ export class BridgeClient {
     }
     if (response.url && new URL(response.url).origin !== this.config.serverUrl) throw new Error("Unexpected response origin");
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (!contentType.startsWith("application/json")) throw new Error("Invalid response content type");
     const declared = Number(response.headers.get("content-length"));
     if (Number.isFinite(declared) && declared > maximumBytes) throw new Error("Response too large");
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.byteLength > maximumBytes) throw new Error("Response too large");
+    if (!contentType.startsWith("application/json")) {
+      if (!response.ok) {
+        const error = new Error("DiscussionBridge rejected the request");
+        error.reason = response.status === 429 ? "rate_limited" : "http_error";
+        error.status = response.status;
+        throw error;
+      }
+      throw new Error("Invalid response content type");
+    }
     let data;
     try { data = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new Error("Invalid response JSON"); }
     if (!response.ok) {

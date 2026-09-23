@@ -42,7 +42,7 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.34", "0.1.0-alpha.99"));
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.35", "0.1.0-alpha.99"));
   assert.match(upgraded, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
@@ -135,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.34");
+  assert.equal(record.adapter_version, "0.2.0-alpha.35");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -163,6 +163,18 @@ test("uses bounded credentialed requests without following redirects", async () 
   await client.resolve({ direction: "to_discourse" });
   assert.equal(seen.options.redirect, "error");
   assert.equal(seen.options.headers["X-DiscussionBridge-Secret"], "s".repeat(32));
+});
+
+test("preserves an HTTP rate-limit status without trusting a non-JSON body", async () => {
+  const cfg = await config();
+  const client = new BridgeClient(cfg, async () => new Response("rate limited", {
+    status: 429,
+    headers: { "Content-Type": "text/plain" },
+  }));
+  await assert.rejects(
+    () => client.claimPublicationWork(300),
+    (error) => error?.status === 429 && error?.reason === "rate_limited",
+  );
 });
 
 test("reads the exact public Discourse branding setting from the browser bootstrap", async () => {
@@ -818,10 +830,40 @@ test("incremental publication queue applies the rate-safe default batch ceiling"
     return response;
   };
   const result = await syncQueuedForumPublications(cfg, store, bridge, ghost);
-  assert.equal(claims, 10);
+  assert.equal(claims, 8);
   assert.equal(result.created, 1);
-  assert.equal(result.unchanged, 9);
+  assert.equal(result.unchanged, 7);
   assert.equal(result.failed, 0);
+});
+
+test("incremental publication queue defers work while an adapter upgrade reconciles", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, ghost } = forumSyncHarness();
+  bridge.platformCatalogStatus = async () => ({
+    catalog_revision: "b".repeat(64),
+    catalog_adapter_id: "ghost-discussion-bridge",
+    catalog_adapter_version: "0.2.0-alpha.34",
+    destination_mapping_state: "current",
+  });
+  bridge.claimPublicationWork = async () => { throw new Error("must defer claims"); };
+  assert.deepEqual(await syncQueuedForumPublications(cfg, store, bridge, ghost), {
+    created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [],
+  });
+});
+
+test("incremental publication queue gracefully defers an unleased rate-limited claim", async () => {
+  const cfg = await config();
+  const store = new StateStore(cfg.stateFile);
+  const { bridge, ghost } = forumSyncHarness();
+  bridge.claimPublicationWork = async () => {
+    const error = new Error("DiscussionBridge rejected the request");
+    error.status = 429;
+    throw error;
+  };
+  assert.deepEqual(await syncQueuedForumPublications(cfg, store, bridge, ghost), {
+    created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [],
+  });
 });
 
 test("forum publication synchronization adopts a uniquely marked draft after a lost create response", async () => {
@@ -950,7 +992,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.34");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.35");
   assert.match(remote[0].html, /Published with <a href="https:\/\/discussionbridge\.dev\/">DiscussionBridge<\/a> from the <a href="https:\/\/forum\.example\/t\/the-bridge-publishes-everywhere\/53">Repeal OBBBA Forum<\/a>/u);
   assert.doesNotMatch(remote[0].html, />The Bridge<\/a>/u);
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
