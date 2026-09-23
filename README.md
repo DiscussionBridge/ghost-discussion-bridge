@@ -42,7 +42,7 @@ runs as a small loopback-only Node service beside Ghost.
   is tagged `#discussionbridge-source`, not the outbound `#discussionbridge`
   opt-in, preventing a publication loop.
   After that initial pass completes, `npm run sync:publication-work` is the
-  steady-state worker: it claims at most 20 receiver-owned work items with an
+  rate-safe steady-state worker: it claims at most 10 receiver-owned work items with an
   exact five-minute lease, materializes or drafts the one identified native
   item, acknowledges only against that lease, and reports bounded failures to
   the receiver for shared attention/retry handling. It does not rescan the
