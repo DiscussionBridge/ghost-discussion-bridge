@@ -42,7 +42,7 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.32", "0.1.0-alpha.99"));
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.33", "0.1.0-alpha.99"));
   assert.match(upgraded, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
@@ -135,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.32");
+  assert.equal(record.adapter_version, "0.2.0-alpha.33");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -748,6 +748,8 @@ test("forum publication synchronization creates once, acknowledges, and exact re
   });
   assert.equal(remote.length, 1);
   assert.equal(remote[0].status, "published");
+  assert.match(remote[0].html, /Published with <a href="https:\/\/discussionbridge\.dev\/">DiscussionBridge<\/a> from the <a href="https:\/\/forum\.example\/t\/forum-scale-canary\/53">Repeal OBBBA Forum<\/a>/u);
+  assert.doesNotMatch(remote[0].html, />The Bridge<\/a>/u);
   assert.equal((await store.read()).forum_publications["53"].canonical_url, "https://ghost.example/forum-topic-53/");
   assert.equal(hasOwn(await store.read(), "forum_publications"), true);
   assert.equal((await store.read()).forum_publications["53"].resource_id, resourceId);
@@ -910,7 +912,9 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.32");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.33");
+  assert.match(remote[0].html, /Published with <a href="https:\/\/discussionbridge\.dev\/">DiscussionBridge<\/a> from the <a href="https:\/\/forum\.example\/t\/the-bridge-publishes-everywhere\/53">Repeal OBBBA Forum<\/a>/u);
+  assert.doesNotMatch(remote[0].html, />The Bridge<\/a>/u);
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 
