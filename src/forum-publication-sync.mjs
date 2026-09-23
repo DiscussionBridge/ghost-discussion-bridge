@@ -116,7 +116,7 @@ function publicationPlan(item, detail, config) {
   const type = contentType(destination);
   const topicTag = `#discussionbridge-topic-${topicId}`;
   const revisionTag = `#discussionbridge-revision-${publicationRevision}`;
-  const provenance = `<hr><aside class="discussionbridge-publication" data-discussionbridge-topic="${topicId}" data-discussionbridge-revision="${publicationRevision}"><p><strong>Published from <a href="${escape(topicUrl)}">The Bridge</a></strong></p><p>Source author: ${escape(author)} · DiscussionBridge for Ghost ${PRODUCT_VERSION}</p></aside><div data-discussionbridge-comments="interactive"></div><script src="/discussionbridge/assets/loader.js?v=${PRODUCT_VERSION}" defer></script>`;
+  const provenance = `<hr><aside class="discussionbridge-publication" data-discussionbridge-topic="${topicId}" data-discussionbridge-revision="${publicationRevision}"><p><strong>Published with <a href="https://discussionbridge.dev/">DiscussionBridge</a> from the <a href="${escape(topicUrl)}">Repeal OBBBA Forum</a></strong></p><p>Source author: ${escape(author)} · DiscussionBridge for Ghost ${PRODUCT_VERSION}</p></aside><div data-discussionbridge-comments="interactive"></div><script src="/discussionbridge/assets/loader.js?v=${PRODUCT_VERSION}" defer></script>`;
   return {
     topicId, sourceRevision, publicationRevision, destination, mappingRevision: destination.mapping_revision,
     title, topicUrl, html: `${html}${provenance}`, type, topicTag, revisionTag,
