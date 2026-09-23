@@ -1,6 +1,7 @@
 const GHOST_ID = /^[a-f0-9]{24}$/iu;
 const MAX_TERMS = 5_000;
 const MAX_CATALOG_BYTES = 240 * 1024;
+export const MAX_FORUM_PUBLICATION_HTML_BYTES = 256 * 1024;
 
 function label(value) {
   if (typeof value !== "string" || !value.trim() || Buffer.byteLength(value) > 255 || /[\u0000-\u001f\u007f]/u.test(value)) {
@@ -32,7 +33,7 @@ export async function buildPlatformCatalog(ghost) {
     service_author_id: "ghost:service",
     presentation_modes: ["simple", "full", "fullInteractive", "native"],
     capabilities: { updates: true, unpublish: true, drafts: true },
-    limits: { content_bytes: 49_152, title_bytes: 255, slug_bytes: 191 },
+    limits: { content_bytes: MAX_FORUM_PUBLICATION_HTML_BYTES, title_bytes: 255, slug_bytes: 191 },
     inventory: {
       authors_complete: true,
       terms_complete: true,

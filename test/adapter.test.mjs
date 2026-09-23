@@ -13,7 +13,7 @@ import { isInteractiveCommentsMode, normalizeCommentsMode } from "../src/comment
 import { ghostAdminToken } from "../src/ghost-admin-client.mjs";
 import { publicationPlan, syncForumPublications, syncQueuedForumPublications } from "../src/forum-publication-sync.mjs";
 import { installRichContent, mergeCodeInjection } from "../src/install-rich-content.mjs";
-import { buildPlatformCatalog } from "../src/platform-catalog.mjs";
+import { buildPlatformCatalog, MAX_FORUM_PUBLICATION_HTML_BYTES } from "../src/platform-catalog.mjs";
 import { runPublicationSynchronization } from "../src/publication-operations.mjs";
 import { nativePublication, syncPublications } from "../src/publication-sync.mjs";
 import { assertStateStoreRuntimePrerequisites, StateStore } from "../src/state-store.mjs";
@@ -42,7 +42,7 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.35", "0.1.0-alpha.99"));
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.36", "0.1.0-alpha.99"));
   assert.match(upgraded, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
@@ -135,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.35");
+  assert.equal(record.adapter_version, "0.2.0-alpha.36");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -656,7 +656,7 @@ function forumSourceTopic(overrides = {}) {
     destination_container_id: "post",
     destination_terms: [{ source_tag_id: 7, destination_taxonomy_id: "tag", destination_term_id: `tag:${"d".repeat(24)}` }],
     presentation_mode: "native", authorship_policy: "service_author", destination_author_id: "ghost:service",
-    slug_policy: "topic_id", limits: { content_bytes: 49_152, title_bytes: 1_000, slug_bytes: 191 },
+    slug_policy: "topic_id", limits: { content_bytes: MAX_FORUM_PUBLICATION_HTML_BYTES, title_bytes: 1_000, slug_bytes: 191 },
   };
   return {
     topic_id: 53,
@@ -729,7 +729,22 @@ test("Ghost catalog reports native posts, pages, operator tags, and its service 
   assert.equal(catalog.inventory.terms_observed, 1);
   assert.equal(catalog.service_author_id, "ghost:service");
   assert.equal(catalog.limits.title_bytes, 255);
+  assert.equal(catalog.limits.content_bytes, MAX_FORUM_PUBLICATION_HTML_BYTES);
   assert.equal(catalog.inventory.terms_complete, true);
+});
+
+test("Ghost forum publication accepts the exact 256 KiB boundary and rejects one byte more", () => {
+  for (const html of ["x".repeat(MAX_FORUM_PUBLICATION_HTML_BYTES), "é".repeat(MAX_FORUM_PUBLICATION_HTML_BYTES / 2)]) {
+    const summary = forumSourceTopic({ content_bytes: Buffer.byteLength(html) });
+    const plan = publicationPlan(summary, { ...summary, content_html: html }, { serverUrl: "https://forum.example" });
+    assert.ok(plan.html.includes(html));
+  }
+  const oversized = "x".repeat(MAX_FORUM_PUBLICATION_HTML_BYTES + 1);
+  const summary = forumSourceTopic({ content_bytes: Buffer.byteLength(oversized) });
+  assert.throws(
+    () => publicationPlan(summary, { ...summary, content_html: oversized }, { serverUrl: "https://forum.example" }),
+    /Invalid source content/u
+  );
 });
 
 test("portable rich-content renderer covers Discourse tables, Mermaid, and math", async () => {
@@ -992,7 +1007,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.35");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.36");
   assert.match(remote[0].html, /Published with <a href="https:\/\/discussionbridge\.dev\/">DiscussionBridge<\/a> from the <a href="https:\/\/forum\.example\/t\/the-bridge-publishes-everywhere\/53">Repeal OBBBA Forum<\/a>/u);
   assert.doesNotMatch(remote[0].html, />The Bridge<\/a>/u);
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
