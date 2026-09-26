@@ -77,9 +77,11 @@ function sourceTaxonomy(item) {
   const seen = new Set();
   const tags = rawTags.map((tag) => {
     if (!tag || !Number.isSafeInteger(tag.id) || tag.id <= 0) throw new Error("Invalid source tag");
-    const slug = bounded(tag.slug, 150, "source tag slug");
+    const rawSlug = bounded(tag.slug, 150, "source tag slug");
     const name = bounded(tag.name, 255, "source tag name");
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug) || seen.has(slug)) throw new Error("Invalid source tag slug");
+    if (!/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/u.test(rawSlug)) throw new Error("Invalid source tag slug");
+    const slug = rawSlug.toLowerCase();
+    if (seen.has(slug)) throw new Error("Invalid source tag slug");
     seen.add(slug);
     return { id: tag.id, slug, name };
   });
