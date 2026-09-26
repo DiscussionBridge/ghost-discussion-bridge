@@ -42,7 +42,7 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.37", "0.1.0-alpha.99"));
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.38", "0.1.0-alpha.99"));
   assert.match(upgraded, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
@@ -135,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.37");
+  assert.equal(record.adapter_version, "0.2.0-alpha.38");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -757,6 +757,38 @@ test("Ghost forum publication accepts the exact 256 KiB boundary and rejects one
   );
 });
 
+test("Ghost source tag slugs accept Discourse case and normalize before internal tag construction", () => {
+  const summary = forumSourceTopic({
+    tags: [
+      { id: 7, slug: "Index", name: "Index" },
+      { id: 8, slug: "TITLE-I", name: "TITLE-I" },
+    ],
+  });
+  const plan = publicationPlan(summary, { ...summary, content_html: "<p>Normalized taxonomy.</p>" }, { serverUrl: "https://forum.example" });
+  assert.deepEqual(plan.sourceTags, [
+    { id: 7, slug: "index", name: "Index" },
+    { id: 8, slug: "title-i", name: "TITLE-I" },
+  ]);
+  assert.deepEqual(plan.sourceTagNames, [
+    "#discussionbridge-source-forum-scale-canary",
+    "#discussionbridge-source-index",
+    "#discussionbridge-source-title-i",
+  ]);
+  const collision = forumSourceTopic({ tags: [
+    { id: 7, slug: "Index", name: "Index" },
+    { id: 8, slug: "index", name: "index" },
+  ] });
+  assert.throws(
+    () => publicationPlan(collision, { ...collision, content_html: "<p>Duplicate taxonomy.</p>" }, { serverUrl: "https://forum.example" }),
+    /Invalid source tag slug/u
+  );
+  const nonAscii = forumSourceTopic({ tags: [{ id: 7, slug: "\u212Aebab", name: "Kelvin" }] });
+  assert.throws(
+    () => publicationPlan(nonAscii, { ...nonAscii, content_html: "<p>Non-ASCII taxonomy.</p>" }, { serverUrl: "https://forum.example" }),
+    /Invalid source tag slug/u
+  );
+});
+
 test("portable rich-content renderer covers Discourse tables, Mermaid, and math", async () => {
   const renderer = await readFile(new URL("../src/browser-rich-content.mjs", import.meta.url), "utf8");
   assert.match(renderer, /code\.lang-mermaid/);
@@ -1044,7 +1076,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.37");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.38");
   assert.match(remote[0].html, /Published with <a href="https:\/\/discussionbridge\.dev\/">DiscussionBridge<\/a> from the <a href="https:\/\/forum\.example\/t\/the-bridge-publishes-everywhere\/53">Repeal OBBBA Forum<\/a>/u);
   assert.doesNotMatch(remote[0].html, />The Bridge<\/a>/u);
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
