@@ -57,6 +57,13 @@ export class GhostAdminClient {
     return items;
   }
 
+  async findLatestIndex() {
+    const path = `/ghost/api/admin/pages/?filter=${encodeURIComponent("tag:hash-discussionbridge-latest-index")}&limit=3&formats=html&include=tags`;
+    const pages = (await this.request("GET", path)).pages;
+    if (!Array.isArray(pages)) throw new Error("Invalid Ghost latest index lookup");
+    return pages;
+  }
+
   async listTags() {
     const tags = (await this.request("GET", "/ghost/api/admin/tags/?limit=all&order=id%20asc")).tags;
     if (!Array.isArray(tags)) throw new Error("Invalid Ghost tag inventory");

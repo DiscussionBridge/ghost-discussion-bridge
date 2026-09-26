@@ -7,6 +7,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const GHOST_ID = /^[a-f0-9]{24}$/iu;
 const REVISION = /^[a-f0-9]{64}$/u;
 const MAX_CURSOR_BYTES = 8_192;
+const MAX_SOURCE_TAGS = 50;
+const LATEST_INDEX_LIMIT = 50;
+const LATEST_INDEX_TAG = "#discussionbridge-latest-index";
 const ADAPTER_ID = "ghost-discussion-bridge";
 
 function bounded(value, maximum, label) {
@@ -63,6 +66,38 @@ function mappedTags(destination) {
   return values;
 }
 
+function sourceTaxonomy(item) {
+  const category = item?.category;
+  if (!category || !Number.isSafeInteger(category.id) || category.id <= 0) throw new Error("Invalid source category");
+  const categorySlug = bounded(category.slug, 150, "source category slug");
+  const categoryName = bounded(category.name, 255, "source category name");
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(categorySlug)) throw new Error("Invalid source category slug");
+  const rawTags = item?.tags;
+  if (!Array.isArray(rawTags) || rawTags.length > MAX_SOURCE_TAGS) throw new Error("Invalid source tags");
+  const seen = new Set();
+  const tags = rawTags.map((tag) => {
+    if (!tag || !Number.isSafeInteger(tag.id) || tag.id <= 0) throw new Error("Invalid source tag");
+    const slug = bounded(tag.slug, 150, "source tag slug");
+    const name = bounded(tag.name, 255, "source tag name");
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug) || seen.has(slug)) throw new Error("Invalid source tag slug");
+    seen.add(slug);
+    return { id: tag.id, slug, name };
+  });
+  return { category: { id: category.id, slug: categorySlug, name: categoryName }, tags };
+}
+
+function sourceTagName(slug) {
+  return `#discussionbridge-source-${slug}`;
+}
+
+function sourceTimeSort(value) {
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/u.exec(value);
+  if (!match) throw new Error("Invalid source time");
+  const second = new Date(`${match[1]}Z`);
+  if (!Number.isFinite(second.valueOf()) || second.toISOString().slice(0, 19) !== match[1]) throw new Error("Invalid source time");
+  return `${match[1]}.${(match[2] ?? "").padEnd(9, "0")}Z`;
+}
+
 function slugFor(destination, title, topicId) {
   if (destination?.slug_policy === "topic_id") return `forum-topic-${topicId}`;
   if (destination?.slug_policy === "source_title") {
@@ -112,7 +147,8 @@ function publicationPlan(item, detail, config) {
       throw new Error(`Invalid source ${label} time`);
     }
   }
-  if (Date.parse(updatedAt) < Date.parse(createdAt)) throw new Error("Source update precedes creation");
+  if (sourceTimeSort(updatedAt) < sourceTimeSort(createdAt)) throw new Error("Source update precedes creation");
+  const source = sourceTaxonomy(item);
   const html = sanitizeSource(detail.content_html);
   const type = contentType(destination);
   const topicTag = `#discussionbridge-topic-${topicId}`;
@@ -123,7 +159,9 @@ function publicationPlan(item, detail, config) {
     title, topicUrl, html: `${html}${provenance}`, type, topicTag, revisionTag,
     slug: slugFor(destination, title, topicId), mappedTags: mappedTags(destination),
     publication: item.publication && typeof item.publication === "object" ? item.publication : {},
-    createdAt, updatedAt,
+    createdAt, updatedAt, updatedSort: sourceTimeSort(updatedAt),
+    sourceCategory: source.category, sourceTags: source.tags,
+    sourceTagNames: [sourceTagName(source.category.slug), ...source.tags.map(({ slug }) => sourceTagName(slug))],
   };
 }
 
@@ -147,7 +185,8 @@ function resourceTag(resourceId) {
 function postPayload(plan, status, resourceId, updatedAt) {
   const tags = [
     { name: "#discussionbridge-source" }, { name: plan.topicTag }, { name: plan.revisionTag },
-    ...(resourceId ? [{ name: resourceTag(resourceId) }] : []), ...plan.mappedTags,
+    ...(resourceId ? [{ name: resourceTag(resourceId) }] : []),
+    ...plan.sourceTagNames.map((name) => ({ name })), ...plan.mappedTags,
   ];
   return {
     title: plan.title,
@@ -257,14 +296,16 @@ async function materializeTopic(config, store, bridge, ghost, item) {
   const resourceId = validateResolve(resolved, plan, native);
   const receiverHealthy = plan.publication.destination_state === "healthy" &&
     plan.publication.acknowledged_publication_revision === plan.publicationRevision;
-  const nativeCurrent = native.status === "published" && hasTag(native, plan.revisionTag) && hasTag(native, resourceTag(resourceId));
+  const nativeCurrent = native.status === "published" && hasTag(native, plan.revisionTag) && hasTag(native, resourceTag(resourceId))
+    && plan.sourceTagNames.every((name) => hasTag(native, name));
   let outcome = wasExisting ? "updated" : "created";
   if (!nativeCurrent) {
     if (typeof native.updated_at !== "string") throw new Error("Ghost publication update identity is unavailable");
     let updateError;
     try { await ghost.update(native.id, postPayload(plan, "published", resourceId, native.updated_at), plan.type); } catch (error) { updateError = error; }
     native = await findNative(ghost, plan, config);
-    if (!native || native.status !== "published" || !hasTag(native, plan.revisionTag) || !hasTag(native, resourceTag(resourceId))) {
+    if (!native || native.status !== "published" || !hasTag(native, plan.revisionTag) || !hasTag(native, resourceTag(resourceId))
+        || !plan.sourceTagNames.every((name) => hasTag(native, name))) {
       throw updateError ?? new Error("Ghost publication state was not persisted");
     }
   } else if (receiverHealthy) {
@@ -285,6 +326,8 @@ async function materializeTopic(config, store, bridge, ghost, item) {
     state.forum_publications[String(plan.topicId)] = {
       resource_id: resourceId, ghost_id: native.id, content_type: plan.type,
       canonical_url: native.url, topic_id: plan.topicId, topic_url: plan.topicUrl,
+      title: plan.title, source_created_at: plan.createdAt, source_updated_at: plan.updatedAt,
+      source_updated_sort: plan.updatedSort, source_category: plan.sourceCategory, source_tags: plan.sourceTags,
       source_revision: plan.sourceRevision, publication_revision: plan.publicationRevision,
       mapping_revision: plan.mappingRevision, adapter_version: PRODUCT_VERSION,
       state: "healthy", synchronized_at: new Date().toISOString(),
@@ -348,6 +391,63 @@ function nextCursor(payload) {
   return cursor;
 }
 
+function latestIndexPlan(state, config) {
+  const items = Object.values(state.forum_publications ?? {})
+    .filter((item) => item?.state === "healthy" && typeof item.title === "string"
+      && typeof item.source_updated_at === "string" && typeof item.source_updated_sort === "string"
+      && typeof item.canonical_url === "string")
+    .sort((left, right) => right.source_updated_sort.localeCompare(left.source_updated_sort)
+      || right.topic_id - left.topic_id)
+    .slice(0, LATEST_INDEX_LIMIT);
+  const rows = items.map((item) => {
+    if (!Number.isSafeInteger(item.topic_id) || item.topic_id <= 0) throw new Error("Invalid stored source topic identity");
+    const canonical = safeUrl(item.canonical_url, config.ghostOrigin, "Ghost publication URL");
+    const updatedAt = bounded(item.source_updated_at, 64, "source update time");
+    if (sourceTimeSort(updatedAt) !== item.source_updated_sort) throw new Error("Stored source update time drift");
+    return `<li><a href="${escape(canonical)}">${escape(item.title)}</a><time datetime="${escape(updatedAt)}">${escape(updatedAt.replace("T", " ").replace(/(?:\.\d+)?Z$/u, " UTC"))}</time></li>`;
+  });
+  const html = `<section class="discussionbridge-latest-index"><h1>Latest publications</h1><p>Ordered by the time the source discussion was last modified.</p><ol>${rows.join("")}</ol></section>`;
+  const revisionTag = `#discussionbridge-latest-revision-${createHash("sha256").update(html).digest("hex")}`;
+  return {
+    itemCount: items.length,
+    revisionTag,
+    title: "Latest publications",
+    slug: "discussionbridge-latest-index",
+    status: "published",
+    tags: [{ name: LATEST_INDEX_TAG }, { name: revisionTag }],
+    html,
+  };
+}
+
+async function synchronizeLatestIndex(config, store, ghost) {
+  const plan = latestIndexPlan(await store.read(), config);
+  if (plan.itemCount === 0) return;
+  const { itemCount: ignoredItemCount, revisionTag, ...payload } = plan;
+  const matches = await ghost.findLatestIndex();
+  if (!Array.isArray(matches) || matches.length > 1) throw new Error("Ambiguous Ghost latest index marker");
+  let page = matches[0];
+  if (!page) {
+    let createError;
+    try { await ghost.create({ ...payload, status: "draft" }, "page"); } catch (error) { createError = error; }
+    const created = await ghost.findLatestIndex();
+    if (!Array.isArray(created) || created.length !== 1) throw createError ?? new Error("Ghost latest index marker was not persisted");
+    page = created[0];
+  }
+  if (!GHOST_ID.test(page?.id ?? "") || typeof page.updated_at !== "string") throw new Error("Invalid Ghost latest index identity");
+  const current = page.status === "published" && page.title === payload.title && page.slug === payload.slug
+    && hasTag(page, LATEST_INDEX_TAG) && hasTag(page, revisionTag);
+  if (!current) {
+    let updateError;
+    try { await ghost.update(page.id, { ...payload, updated_at: page.updated_at }, "page"); } catch (error) { updateError = error; }
+    const updated = await ghost.findLatestIndex();
+    if (!Array.isArray(updated) || updated.length !== 1 || updated[0].status !== "published"
+        || updated[0].title !== payload.title || updated[0].slug !== payload.slug
+        || !hasTag(updated[0], LATEST_INDEX_TAG) || !hasTag(updated[0], revisionTag)) {
+      throw updateError ?? new Error("Ghost latest index state was not persisted");
+    }
+  }
+}
+
 export async function syncForumPublications(config, store, bridge, ghost) {
   const summary = { created: 0, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [] };
   const catalog = await updateCatalog(bridge, ghost);
@@ -390,6 +490,7 @@ export async function syncForumPublications(config, store, bridge, ghost) {
     }
     cursor = nextCursor(payload);
   } while (cursor);
+  await synchronizeLatestIndex(config, store, ghost);
   return summary;
 }
 
@@ -440,7 +541,8 @@ export async function syncQueuedForumPublications(config, store, bridge, ghost, 
       bridge.clearPublicationLease();
     }
   }
+  await synchronizeLatestIndex(config, store, ghost);
   return summary;
 }
 
-export { publicationPlan };
+export { latestIndexPlan, publicationPlan };

@@ -11,7 +11,7 @@ import { loadConfig } from "../src/config.mjs";
 import { BridgeClient, ghostRecord } from "../src/bridge-client.mjs";
 import { isInteractiveCommentsMode, normalizeCommentsMode } from "../src/comments-mode.mjs";
 import { ghostAdminToken } from "../src/ghost-admin-client.mjs";
-import { publicationPlan, syncForumPublications, syncQueuedForumPublications } from "../src/forum-publication-sync.mjs";
+import { latestIndexPlan, publicationPlan, syncForumPublications, syncQueuedForumPublications } from "../src/forum-publication-sync.mjs";
 import { installRichContent, mergeCodeInjection } from "../src/install-rich-content.mjs";
 import { buildPlatformCatalog, MAX_FORUM_PUBLICATION_HTML_BYTES } from "../src/platform-catalog.mjs";
 import { runPublicationSynchronization } from "../src/publication-operations.mjs";
@@ -42,7 +42,7 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
   assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.36", "0.1.0-alpha.99"));
+  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.37", "0.1.0-alpha.99"));
   assert.match(upgraded, new RegExp(PRODUCT_VERSION.replaceAll(".", "\\.")));
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
@@ -135,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.36");
+  assert.equal(record.adapter_version, "0.2.0-alpha.37");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -680,6 +680,7 @@ function forumSyncHarness() {
   const summary = forumSourceTopic();
   const detail = { ...summary, content_html: "<h2>One forum</h2><p>Seven sites.</p>" };
   const remote = [];
+  const latestIndex = [];
   const resourceId = "33333333-3333-4333-8333-333333333333";
   const bridge = {
     platformCatalogStatus: async () => ({ catalog_revision: null, destination_mapping_state: "current" }),
@@ -702,18 +703,22 @@ function forumSyncHarness() {
   const ghost = {
     listTags: async () => [{ id: "d".repeat(24), name: "Policy" }],
     findByTopic: async () => remote,
-    create: async (post) => {
-      const created = { ...post, id: "e".repeat(24), url: `https://ghost.example/p/${"f".repeat(24)}/`, updated_at: "2026-09-20T16:01:00.000Z" };
-      remote.push(created);
+    findLatestIndex: async () => latestIndex,
+    create: async (post, contentType = "post") => {
+      const target = contentType === "page" ? latestIndex : remote;
+      const created = { ...post, id: contentType === "page" ? "a".repeat(24) : "e".repeat(24), url: `https://ghost.example/${post.slug ?? `p/${"f".repeat(24)}`}/`, updated_at: "2026-09-20T16:01:00.000Z" };
+      target.push(created);
       return created;
     },
-    update: async (_id, post) => {
-      remote[0] = { ...remote[0], ...post, url: `https://ghost.example/${post.slug ?? remote[0].slug}/`, updated_at: "2026-09-20T16:02:00.000Z" };
-      return remote[0];
+    update: async (_id, post, contentType = "post") => {
+      const target = contentType === "page" ? latestIndex : remote;
+      const normalized = contentType === "page" ? { ...post, html: post.html.replace("<ol>", '<ol data-ghost-normalized="true">') } : post;
+      target[0] = { ...target[0], ...normalized, url: `https://ghost.example/${post.slug ?? target[0].slug}/`, updated_at: "2026-09-20T16:02:00.000Z" };
+      return target[0];
     },
     get: async () => remote[0],
   };
-  return { bridge, detail, ghost, remote, resourceId, summary };
+  return { bridge, detail, ghost, latestIndex, remote, resourceId, summary };
 }
 
 test("Ghost catalog reports native posts, pages, operator tags, and its service author", async () => {
@@ -745,6 +750,11 @@ test("Ghost forum publication accepts the exact 256 KiB boundary and rejects one
     () => publicationPlan(summary, { ...summary, content_html: oversized }, { serverUrl: "https://forum.example" }),
     /Invalid source content/u
   );
+  const invalidDate = forumSourceTopic({ source_updated_at: "2026-02-30T16:00:00Z" });
+  assert.throws(
+    () => publicationPlan(invalidDate, { ...invalidDate, content_html: "<p>Invalid date.</p>" }, { serverUrl: "https://forum.example" }),
+    /Invalid source time/u
+  );
 });
 
 test("portable rich-content renderer covers Discourse tables, Mermaid, and math", async () => {
@@ -760,7 +770,7 @@ test("portable rich-content renderer covers Discourse tables, Mermaid, and math"
 test("forum publication synchronization creates once, acknowledges, and exact retry is unchanged", async () => {
   const cfg = await config();
   const store = new StateStore(cfg.stateFile);
-  const { bridge, detail, ghost, remote, resourceId, summary } = forumSyncHarness();
+  const { bridge, detail, ghost, latestIndex, remote, resourceId, summary } = forumSyncHarness();
   assert.deepEqual(await syncForumPublications(cfg, store, bridge, ghost), {
     created: 1, updated: 0, unchanged: 0, held: 0, unpublished: 0, failed: 0, errors: [],
   });
@@ -781,6 +791,32 @@ test("forum publication synchronization creates once, acknowledges, and exact re
   assert.equal(hasOwn(await store.read(), "forum_publications"), true);
   assert.equal((await store.read()).forum_publications["53"].resource_id, resourceId);
   assert.equal(remote[0].published_at, summary.source_created_at);
+  assert.equal((await store.read()).forum_publications["53"].source_updated_at, summary.source_updated_at);
+  assert.equal((await store.read()).forum_publications["53"].source_updated_sort, "2026-09-20T16:00:00.000000000Z");
+  assert.deepEqual((await store.read()).forum_publications["53"].source_category, summary.category);
+  assert.deepEqual((await store.read()).forum_publications["53"].source_tags, summary.tags);
+  assert.equal(remote[0].tags.some(({ name }) => name === "#discussionbridge-source-forum-scale-canary"), true);
+  assert.equal(remote[0].tags.some(({ name }) => name === "#discussionbridge-source-policy"), true);
+  assert.equal(latestIndex.length, 1);
+  assert.equal(latestIndex[0].status, "published");
+  assert.match(latestIndex[0].html, /Ordered by the time the source discussion was last modified/u);
+  assert.match(latestIndex[0].html, /Forum scale canary/u);
+});
+
+test("Ghost latest index uses exact source-modified order and a deterministic topic tie-break", () => {
+  const plan = latestIndexPlan({ forum_publications: {
+    "9": { state: "healthy", topic_id: 9, title: "Older", canonical_url: "https://ghost.example/older/", source_updated_at: "2026-09-20T16:00:00Z", source_updated_sort: "2026-09-20T16:00:00.000000000Z" },
+    "10": { state: "healthy", topic_id: 10, title: "Newer tie", canonical_url: "https://ghost.example/newer-tie/", source_updated_at: "2026-09-21T16:00:00.1Z", source_updated_sort: "2026-09-21T16:00:00.100000000Z" },
+    "8": { state: "healthy", topic_id: 8, title: "Newer first", canonical_url: "https://ghost.example/newer-first/", source_updated_at: "2026-09-21T16:00:00.1Z", source_updated_sort: "2026-09-21T16:00:00.100000000Z" },
+    "7": { state: "held", topic_id: 7, title: "Held", canonical_url: "https://ghost.example/held/", source_updated_at: "2026-09-22T16:00:00Z", source_updated_sort: "2026-09-22T16:00:00.000000000Z" },
+  } }, { ghostOrigin: "https://ghost.example" });
+  assert.ok(plan.html.indexOf("Newer tie") < plan.html.indexOf("Newer first"));
+  assert.ok(plan.html.indexOf("Newer first") < plan.html.indexOf("Older"));
+  assert.doesNotMatch(plan.html, /Held/u);
+  assert.match(plan.revisionTag, /^#discussionbridge-latest-revision-[a-f0-9]{64}$/u);
+  assert.throws(() => latestIndexPlan({ forum_publications: {
+    "9": { state: "healthy", topic_id: 9, title: "Drift", canonical_url: "https://ghost.example/drift/", source_updated_at: "2026-09-20T16:00:00Z", source_updated_sort: "2026-09-21T16:00:00.000000000Z" },
+  } }, { ghostOrigin: "https://ghost.example" }), /Stored source update time drift/u);
 });
 
 test("incremental publication queue claims and acknowledges the exact Ghost item once", async () => {
@@ -888,6 +924,7 @@ test("forum publication synchronization adopts a uniquely marked draft after a l
   const create = ghost.create;
   ghost.create = async (...args) => {
     await create(...args);
+    if (args[1] === "page") return;
     throw new Error("Synthetic lost Ghost create response");
   };
   assert.deepEqual(await syncForumPublications(cfg, store, bridge, ghost), {
@@ -1007,7 +1044,7 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.36");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.37");
   assert.match(remote[0].html, /Published with <a href="https:\/\/discussionbridge\.dev\/">DiscussionBridge<\/a> from the <a href="https:\/\/forum\.example\/t\/the-bridge-publishes-everywhere\/53">Repeal OBBBA Forum<\/a>/u);
   assert.doesNotMatch(remote[0].html, />The Bridge<\/a>/u);
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
