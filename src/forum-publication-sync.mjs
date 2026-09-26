@@ -79,8 +79,8 @@ function sourceTaxonomy(item) {
     if (!tag || !Number.isSafeInteger(tag.id) || tag.id <= 0) throw new Error("Invalid source tag");
     const rawSlug = bounded(tag.slug, 150, "source tag slug");
     const name = bounded(tag.name, 255, "source tag name");
-    if (!/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/u.test(rawSlug)) throw new Error("Invalid source tag slug");
-    const slug = rawSlug.toLowerCase();
+    if (!/^[A-Za-z0-9]+(?:[-\u2014][A-Za-z0-9]+)*$/u.test(rawSlug)) throw new Error("Invalid source tag slug");
+    const slug = rawSlug.replaceAll("\u2014", "-").toLowerCase();
     if (seen.has(slug)) throw new Error("Invalid source tag slug");
     seen.add(slug);
     return { id: tag.id, slug, name };
