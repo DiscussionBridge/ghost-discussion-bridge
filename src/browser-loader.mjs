@@ -2,14 +2,16 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import mermaid from "mermaid";
 import { isInteractiveCommentsMode, normalizeCommentsMode } from "./comments-mode.mjs";
+import { browserDeployment } from "./browser-deployment.mjs";
 
-mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+const loaderAddress = document.currentScript?.src;
+const deployment = browserDeployment(loaderAddress);
 
 function installStylesheet() {
   if (document.querySelector('link[data-discussionbridge-renderer-style]')) return;
   const link = document.createElement("link");
   link.rel = "stylesheet";
-  link.href = "/discussionbridge/assets/loader.css";
+  link.href = deployment.stylesheet;
   link.setAttribute("data-discussionbridge-renderer-style", "");
   document.head.appendChild(link);
 }
@@ -179,84 +181,95 @@ function installInteractiveDiscussion(target, record, addHeader = true, sourcePr
   document.head.appendChild(script);
 }
 
-const nativeArticle = document.querySelector(".gh-content");
-if (nativeArticle) {
-  renderRichContent(nativeArticle).then(() => installContents(nativeArticle));
-  if (document.body.classList.contains("tag-hash-discussionbridge-source") && !nativeArticle.querySelector("[data-discussionbridge-comments]")) {
-    const discussion = document.createElement("div");
-    discussion.setAttribute("data-discussionbridge-comments", "interactive");
-    nativeArticle.appendChild(discussion);
+function initializeBrowser() {
+  if (window.__discussionBridgeGhostLoader === loaderAddress) return;
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+  const nativeArticle = document.querySelector(".gh-content");
+  if (nativeArticle) {
+    renderRichContent(nativeArticle).then(() => installContents(nativeArticle));
+    if (document.body.classList.contains("tag-hash-discussionbridge-source") && !nativeArticle.querySelector("[data-discussionbridge-comments]")) {
+      const discussion = document.createElement("div");
+      discussion.setAttribute("data-discussionbridge-comments", "interactive");
+      nativeArticle.appendChild(discussion);
+    }
   }
-}
 
-for (const target of document.querySelectorAll("[data-discussionbridge-resource]")) {
-  if (target.dataset.discussionbridgePresentationMounted === "true") continue;
-  target.dataset.discussionbridgePresentationMounted = "true";
-  const resource = target.getAttribute("data-discussionbridge-resource");
-  if (!/^[0-9a-f-]{36}$/i.test(resource || "")) continue;
-  fetch(`/discussionbridge/presentation/${encodeURIComponent(resource)}`, { credentials: "same-origin", redirect: "error" })
-    .then((response) => { if (!response.ok) throw new Error(); return response.text(); })
-    .then(async (html) => {
-      target.innerHTML = html;
-      await renderRichContent(target);
-      installContents(target);
-      const discussion = target.querySelector("[data-discussionbridge-presentation-comments]");
-      if (!discussion) throw new Error();
-      installInteractiveDiscussion(discussion, {
-        topic_id: Number(discussion.getAttribute("data-topic-id")),
-        topic_url: discussion.getAttribute("data-topic-url"),
-        forum_origin: discussion.getAttribute("data-forum-origin"),
-      }, false, true);
-    })
-    .catch(() => { target.textContent = "Discussion is temporarily unavailable."; });
-}
-
-for (const target of document.querySelectorAll("[data-discussionbridge-comments]")) {
-  if (target.dataset.discussionbridgeCommentsMounted === "true") continue;
-  target.dataset.discussionbridgeCommentsMounted = "true";
-  const mode = normalizeCommentsMode(target.getAttribute("data-discussionbridge-comments") || "full");
-  if (!mode) {
-    target.textContent = "Discussion is temporarily unavailable.";
-    continue;
-  }
-  const source = new URL(document.querySelector('link[rel="canonical"]')?.href || window.location.href);
-  source.search = "";
-  source.hash = "";
-  if (mode === "simple") {
-    installDiscussionStyles();
-    fetch(`/discussionbridge/simple?source=${encodeURIComponent(source.href)}`, { credentials: "same-origin", redirect: "error" })
+  for (const target of document.querySelectorAll("[data-discussionbridge-resource]")) {
+    // Retained native markup used the resource attribute for provenance, too.
+    // It is metadata, never a registered presentation slot.
+    if (target.matches(".discussionbridge-publication")) continue;
+    if (target.dataset.discussionbridgePresentationMounted === "true") continue;
+    target.dataset.discussionbridgePresentationMounted = "true";
+    const resource = target.getAttribute("data-discussionbridge-resource");
+    if (!/^[0-9a-f-]{36}$/i.test(resource || "")) continue;
+    fetch(`${deployment.base}presentation/${encodeURIComponent(resource)}`, { credentials: "omit", redirect: "error" })
       .then((response) => { if (!response.ok) throw new Error(); return response.text(); })
-      .then((html) => { target.innerHTML = html; return renderRichContent(target); })
+      .then(async (html) => {
+        target.innerHTML = html;
+        await renderRichContent(target);
+        installContents(target);
+        const discussion = target.querySelector("[data-discussionbridge-presentation-comments]");
+        if (!discussion) throw new Error();
+        installInteractiveDiscussion(discussion, {
+          topic_id: Number(discussion.getAttribute("data-topic-id")),
+          topic_url: discussion.getAttribute("data-topic-url"),
+          forum_origin: discussion.getAttribute("data-forum-origin"),
+        }, false, true);
+      })
       .catch(() => { target.textContent = "Discussion is temporarily unavailable."; });
-    continue;
   }
-  fetch(`/discussionbridge/comments?source=${encodeURIComponent(source.href)}`, { credentials: "same-origin", redirect: "error" })
-    .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
-    .then((record) => {
-      if (isInteractiveCommentsMode(mode)) {
-        installInteractiveDiscussion(target, record);
-        return;
-      }
-      if (!Number.isSafeInteger(record.topic_id) || record.topic_id <= 0 || new URL(record.topic_url).origin !== record.forum_origin) throw new Error();
-      const header = document.createElement("div");
-      header.className = "discussionbridge-comments-header";
-      const heading = document.createElement("h2");
-      heading.textContent = "Discussion";
-      const link = document.createElement("a");
-      link.href = record.topic_url;
-      link.textContent = "Open discussion";
-      link.rel = "nofollow noopener noreferrer";
-      header.append(heading, link);
-      target.before(header);
+
+  for (const target of document.querySelectorAll("[data-discussionbridge-comments]")) {
+    if (target.dataset.discussionbridgeCommentsMounted === "true") continue;
+    target.dataset.discussionbridgeCommentsMounted = "true";
+    const mode = normalizeCommentsMode(target.getAttribute("data-discussionbridge-comments") || "full");
+    if (!mode) {
+      target.textContent = "Discussion is temporarily unavailable.";
+      continue;
+    }
+    const source = new URL(document.querySelector('link[rel="canonical"]')?.href || window.location.href);
+    source.search = "";
+    source.hash = "";
+    if (mode === "simple") {
       installDiscussionStyles();
-      installBridgeCredit(target);
-      target.id = "discourse-comments";
-      window.DiscourseEmbed = { discourseUrl: `${record.forum_origin}/`, topicId: record.topic_id };
-      const script = document.createElement("script");
-      script.async = true;
-      script.src = `${record.forum_origin}/javascripts/embed.js`;
-      script.setAttribute("data-discussionbridge-comments-script", "");
-      document.head.appendChild(script);
-    })
-    .catch(() => { target.textContent = "Discussion is temporarily unavailable."; });
+      fetch(`${deployment.base}simple?source=${encodeURIComponent(source.href)}`, { credentials: "omit", redirect: "error" })
+        .then((response) => { if (!response.ok) throw new Error(); return response.text(); })
+        .then((html) => { target.innerHTML = html; return renderRichContent(target); })
+        .catch(() => { target.textContent = "Discussion is temporarily unavailable."; });
+      continue;
+    }
+    fetch(`${deployment.base}comments?source=${encodeURIComponent(source.href)}`, { credentials: "omit", redirect: "error" })
+      .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
+      .then((record) => {
+        if (isInteractiveCommentsMode(mode)) {
+          installInteractiveDiscussion(target, record);
+          return;
+        }
+        if (!Number.isSafeInteger(record.topic_id) || record.topic_id <= 0 || new URL(record.topic_url).origin !== record.forum_origin) throw new Error();
+        const header = document.createElement("div");
+        header.className = "discussionbridge-comments-header";
+        const heading = document.createElement("h2");
+        heading.textContent = "Discussion";
+        const link = document.createElement("a");
+        link.href = record.topic_url;
+        link.textContent = "Open discussion";
+        link.rel = "nofollow noopener noreferrer";
+        header.append(heading, link);
+        target.before(header);
+        installDiscussionStyles();
+        installBridgeCredit(target);
+        target.id = "discourse-comments";
+        window.DiscourseEmbed = { discourseUrl: `${record.forum_origin}/`, topicId: record.topic_id };
+        const script = document.createElement("script");
+        script.async = true;
+        script.src = `${record.forum_origin}/javascripts/embed.js`;
+        script.setAttribute("data-discussionbridge-comments-script", "");
+        document.head.appendChild(script);
+      })
+      .catch(() => { target.textContent = "Discussion is temporarily unavailable."; });
+  }
+
+  window.__discussionBridgeGhostLoader = loaderAddress;
 }
+
+initializeBrowser();

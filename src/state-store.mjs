@@ -5,10 +5,10 @@ import { access, link, mkdir, open, readFile, rename, stat, unlink } from "node:
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { MAX_STATE_BYTES, readStateFile, serializedState, validState } from "./state-file.mjs";
 
 const LOCK_WAIT_MS = 25;
 const LOCK_TIMEOUT_MS = 120_000;
-const MAX_STATE_BYTES = 16 * 1024 * 1024;
 const TRANSACTION_WORKER = fileURLToPath(new URL("./state-transaction-worker.mjs", import.meta.url));
 
 export async function assertStateStoreRuntimePrerequisites() {
@@ -39,11 +39,7 @@ export class StateStore {
 
   async read() {
     try {
-      const parsed = JSON.parse(await readFile(this.path, "utf8"));
-      if (!parsed || parsed.version !== 1 || typeof parsed.posts !== "object" || typeof parsed.presentations !== "object") throw new Error();
-      if (parsed.publications === undefined) parsed.publications = {};
-      if (!parsed.publications || typeof parsed.publications !== "object" || Array.isArray(parsed.publications)) throw new Error();
-      return parsed;
+      return await readStateFile(this.path);
     } catch (error) {
       if (error.code === "ENOENT") return { version: 1, posts: {}, presentations: {}, publications: {} };
       throw new Error("Invalid DiscussionBridge state file");
@@ -56,11 +52,12 @@ export class StateStore {
   }
 
   async writeUnlocked(state) {
+    const serialized = serializedState(state);
     await mkdir(dirname(this.path), { recursive: true, mode: 0o750 });
     const temporary = `${this.path}.${process.pid}.tmp`;
     const handle = await open(temporary, "wx", 0o600);
     try {
-      await handle.writeFile(`${JSON.stringify(state, null, 2)}\n`, "utf8");
+      await handle.writeFile(serialized, "utf8");
       await handle.sync();
     } finally { await handle.close(); }
     await rename(temporary, this.path);
@@ -121,7 +118,7 @@ export class StateStore {
             const decoded = Buffer.from(line.slice(6), "base64url").toString("utf8");
             if (Buffer.byteLength(decoded) > MAX_STATE_BYTES) throw new Error();
             stateReceived = true;
-            resolveState(JSON.parse(decoded));
+            resolveState(validState(JSON.parse(decoded)));
           } catch {
             child.kill("SIGKILL");
           }
@@ -148,7 +145,8 @@ export class StateStore {
 
     try {
       const state = await stateReady;
-      const nextState = await callback(state);
+      const nextState = validState(await callback(state));
+      serializedState(nextState);
       const serialized = JSON.stringify(nextState);
       if (Buffer.byteLength(serialized) > MAX_STATE_BYTES) throw new Error("DiscussionBridge state is too large");
       child.stdin.end(`COMMIT ${Buffer.from(serialized).toString("base64url")}\n`);

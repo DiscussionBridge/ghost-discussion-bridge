@@ -1,8 +1,8 @@
 import { open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { MAX_STATE_BYTES, readStateFile, serializedState, validState } from "./state-file.mjs";
 
-const MAX_STATE_BYTES = 16 * 1024 * 1024;
 const [statePath, controlPath = "", controlPhase = ""] = process.argv.slice(2);
 const temporary = `${statePath}.${process.pid}.tmp`;
 
@@ -17,25 +17,6 @@ async function pauseAt(phase) {
       if (error.code !== "ENOENT") throw error;
       await delay(10);
     }
-  }
-}
-
-function validState(parsed) {
-  if (!parsed || parsed.version !== 1 || typeof parsed.posts !== "object" || Array.isArray(parsed.posts)) throw new Error("Invalid DiscussionBridge state file");
-  if (typeof parsed.presentations !== "object" || Array.isArray(parsed.presentations)) throw new Error("Invalid DiscussionBridge state file");
-  if (parsed.publications === undefined) parsed.publications = {};
-  if (!parsed.publications || typeof parsed.publications !== "object" || Array.isArray(parsed.publications)) throw new Error("Invalid DiscussionBridge state file");
-  return parsed;
-}
-
-async function readState() {
-  try {
-    const bytes = await readFile(statePath);
-    if (bytes.byteLength > MAX_STATE_BYTES) throw new Error("DiscussionBridge state is too large");
-    return validState(JSON.parse(bytes.toString("utf8")));
-  } catch (error) {
-    if (error.code === "ENOENT") return { version: 1, posts: {}, presentations: {}, publications: {} };
-    throw error;
   }
 }
 
@@ -56,13 +37,14 @@ async function readCommit() {
 
 try {
   await pauseAt("before-read");
-  const state = await readState();
+  const state = await readStateFile(statePath);
   await pauseAt("after-read");
   process.stdout.write(`STATE ${Buffer.from(JSON.stringify(state)).toString("base64url")}\n`);
   const nextState = await readCommit();
+  const serialized = serializedState(nextState);
   const handle = await open(temporary, "wx", 0o600);
   try {
-    await handle.writeFile(`${JSON.stringify(nextState, null, 2)}\n`, "utf8");
+    await handle.writeFile(serialized, "utf8");
     await pauseAt("after-write");
     await handle.sync();
     await pauseAt("after-sync");

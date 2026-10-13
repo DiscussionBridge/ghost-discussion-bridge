@@ -1,1 +1,3 @@
 public/discussionbridge-loader.js whitespace=-trailing-space
+lib/cms-schema.json -text -filter -ident -working-tree-encoding
+lib/cms-runtime.mjs text eol=lf -filter -ident

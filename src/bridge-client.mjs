@@ -1,4 +1,7 @@
 import { PRODUCT_VERSION } from "./version.mjs";
+import { boundedResponse } from "./bounded-response.mjs";
+import { hydratePublication, PUBLICATION_CONTRACT, SourceChanged } from "./publication-content.mjs";
+import { outboundBody, sourcePublication } from "./source-publication.mjs";
 
 const MAX_BYTES = 65_536;
 const MAX_CONTENT_HTML_BYTES = 48 * 1024;
@@ -51,9 +54,10 @@ function sourceAuthorship(current, ghostOrigin) {
 }
 
 export class BridgeClient {
-  constructor(config, fetchImplementation = fetch) {
+  constructor(config, fetchImplementation = fetch, { timeoutMs = 10_000 } = {}) {
     this.config = config;
     this.fetch = fetchImplementation;
+    this.timeoutMs = timeoutMs;
   }
 
   async resolve(record) {
@@ -64,15 +68,27 @@ export class BridgeClient {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(resourceId)) {
       throw new Error("Invalid resource ID");
     }
-    return this.request("GET", `/discussion-bridge/v1/bridge-records/${encodeURIComponent(resourceId)}.json`);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const response = await this.request("GET", `/discussion-bridge/v1/bridge-records/${encodeURIComponent(resourceId)}.json?publication_contract=${PUBLICATION_CONTRACT}`, undefined, true, 2 * 1024 * 1024);
+      if (response.bridge_record?.resource_id !== resourceId) throw new Error("Ghost detail resource identity changed");
+      try { if (response.bridge_record.source?.content) response.bridge_record.content_html = await this.hydrate(response.bridge_record); return response; }
+      catch (error) { if (!(error instanceof SourceChanged) || attempt === 2) throw error; }
+    }
+  }
+
+  async hydrate(record) {
+    return hydratePublication(record, async (path) => {
+      try { return { status: 200, ok: true, payload: await this.request("GET", path, undefined, true, 65536) }; }
+      catch (error) { if (error.status === 409) return { status: 409, ok: false }; throw error; }
+    });
   }
 
   async records(page = 1, snapshot) {
     if (!Number.isSafeInteger(page) || page < 1 || page > 10_000) throw new Error("Invalid records page");
     if (snapshot !== undefined && (typeof snapshot !== "string" || !snapshot || snapshot.length > 8_192)) throw new Error("Invalid records snapshot");
-    const query = new URLSearchParams({ page: String(page) });
+    const query = new URLSearchParams({ page: String(page), publication_contract: PUBLICATION_CONTRACT });
     if (snapshot) query.set("snapshot", snapshot);
-    return this.request("GET", `/discussion-bridge/v1/bridge-records.json?${query}`);
+    return this.request("GET", `/discussion-bridge/v1/bridge-records.json?${query}`, undefined, true, 2 * 1024 * 1024);
   }
 
   async publicTopic(topicId) {
@@ -91,30 +107,20 @@ export class BridgeClient {
   }
 
   async publicPoweredByDiscourse() {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
-    let response;
-    try {
-      response = await this.fetch(`${this.config.serverUrl}/`, {
+    const { response, bytes } = await boundedResponse(this.fetch, `${this.config.serverUrl}/`, {
         credentials: "omit",
         headers: {
           Accept: "text/html",
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
         },
         redirect: "error",
-        signal: controller.signal,
+      }, {
+        origin: this.config.serverUrl, mediaType: "text/html", maximumBytes: 512 * 1024, timeoutMs: this.timeoutMs,
+        transportError: "Discourse branding transport failed", originError: "Unexpected response origin",
+        mediaError: "Invalid Discourse branding response", limitError: "Response too large",
       });
-    } catch {
-      throw new Error("Discourse branding transport failed");
-    } finally {
-      clearTimeout(timer);
-    }
-    if (response.url && new URL(response.url).origin !== this.config.serverUrl) throw new Error("Unexpected response origin");
-    if (!response.ok || !(response.headers.get("content-type") ?? "").toLowerCase().startsWith("text/html")) throw new Error("Invalid Discourse branding response");
-    const declared = Number(response.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > 512 * 1024) throw new Error("Response too large");
-    const text = await response.text();
-    if (Buffer.byteLength(text) > 512 * 1024) throw new Error("Response too large");
+    if (!response.ok) throw new Error("Invalid Discourse branding response");
+    const text = new TextDecoder().decode(bytes);
     const match = /<script[^>]+id=["']data-preloaded["'][^>]*>([\s\S]*?)<\/script>/iu.exec(text);
     if (!match) throw new Error("Discourse branding setting is unavailable");
     let outer, settings;
@@ -123,17 +129,12 @@ export class BridgeClient {
     return settings.enable_powered_by_discourse;
   }
 
-  async request(method, path, payload, authenticate = true) {
+  async request(method, path, payload, authenticate = true, maximumBytes = MAX_BYTES) {
     const body = payload === undefined ? undefined : JSON.stringify(payload);
     if (body && Buffer.byteLength(body) > MAX_BYTES) throw new Error("Request too large");
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
-    let response;
-    try {
-      response = await this.fetch(`${this.config.serverUrl}${path}`, {
+    const { response, bytes } = await boundedResponse(this.fetch, `${this.config.serverUrl}${path}`, {
         method,
         redirect: "error",
-        signal: controller.signal,
         headers: {
           Accept: "application/json",
           ...(body ? { "Content-Type": "application/json" } : {}),
@@ -143,25 +144,17 @@ export class BridgeClient {
           } : {}),
         },
         body,
+      }, {
+        origin: this.config.serverUrl, mediaType: "application/json", maximumBytes, timeoutMs: this.timeoutMs,
+        transportError: "DiscussionBridge transport failed", originError: "Unexpected response origin",
+        mediaError: "Invalid response content type", limitError: "Response too large",
       });
-    } catch {
-      throw new Error("DiscussionBridge transport failed");
-    } finally {
-      clearTimeout(timer);
-    }
-    if (response.url && new URL(response.url).origin !== this.config.serverUrl) throw new Error("Unexpected response origin");
-    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (!contentType.startsWith("application/json")) throw new Error("Invalid response content type");
-    const declared = Number(response.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > MAX_BYTES) throw new Error("Response too large");
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength > MAX_BYTES) throw new Error("Response too large");
     let data;
-    try { data = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new Error("Invalid response JSON"); }
+    try { data = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)); } catch { throw new Error("Invalid response JSON"); }
     if (!response.ok) {
-      const reason = typeof data?.reason === "string" ? data.reason : "request_failed";
       const error = new Error("DiscussionBridge rejected the request");
-      error.reason = reason;
+      // Upstream text is not a safe public diagnostic or logging payload.
+      error.reason = "request_failed";
       error.status = response.status;
       throw error;
     }
@@ -172,28 +165,38 @@ export class BridgeClient {
 export function ghostRecord(payload, config, correlationId) {
   const current = payload?.post?.current;
   if (!current || typeof current !== "object") throw new Error("Invalid Ghost webhook");
-  const id = boundedString(current.id, 255, "Ghost post ID");
+  const id = boundedString(current.id, 244, "Ghost post ID");
   const title = boundedString(current.title, 1024, "title");
-  const contentHtml = boundedString(current.html, MAX_CONTENT_HTML_BYTES, "published content");
+  const fullContentHtml = boundedString(current.html, Number.MAX_SAFE_INTEGER, "published content");
   const url = new URL(boundedString(current.url, 2048, "canonical URL"));
   if (url.origin !== config.ghostOrigin || !url.pathname.startsWith("/")) throw new Error("Canonical URL is outside Ghost origin");
   if (current.status !== "published") throw new Error("Ghost post is not published");
   const tags = Array.isArray(current.tags) ? current.tags : [];
   const optedIn = tags.some((tag) => tag && typeof tag === "object" && (tag.name === "#discussionbridge" || tag.slug === "hash-discussionbridge"));
   if (!optedIn) throw new Error("Ghost post is not opted in");
+  if (tags.some((tag) => tag?.name === "#discussionbridge-source" || tag?.slug === "hash-discussionbridge-source")) throw new Error("A received source-owned publication cannot be republished as a Ghost original");
   const authorship = sourceAuthorship(current, config.ghostOrigin);
-  return {
+  const publication = sourcePublication({ key: id, title, full_content_html: fullContentHtml, source_authors: authorship.source_authors, primary_source_author_id: authorship.primary_source_author_id }, current.created_at, current.updated_at);
+  if (!publication && Buffer.byteLength(fullContentHtml) > MAX_CONTENT_HTML_BYTES) throw new Error("Ghost source dates are needed before delivering a complete-content excerpt");
+  const record = {
     direction: "to_discourse",
     external_id: `ghost-post:${id}`,
     canonical_url: url.href,
     title,
-    content_html: contentHtml,
+    content_html: outboundBody(fullContentHtml, url.href),
     published: true,
     visibility: "unlisted",
     adapter_id: "ghost-discussion-bridge",
     adapter_version: PRODUCT_VERSION,
     correlation_id: correlationId,
     ...authorship,
+    ...(publication ? { source_publication: publication } : {}),
     ...(config.lane ? { lane: config.lane } : {}),
   };
+  let budget = MAX_CONTENT_HTML_BYTES;
+  while (Buffer.byteLength(JSON.stringify({ bridge_record: { ...record, ...(publication ? { source_publication: { ...publication, previous_revision: "a".repeat(64) } } : {}) } })) > MAX_BYTES) {
+    if (!publication) throw new Error("Ghost source dates are needed before delivering an envelope-sized excerpt");
+    budget = Math.floor(budget * 0.85); record.content_html = outboundBody(fullContentHtml, url.href, budget, true); publication.excerpted = true;
+  }
+  return record;
 }

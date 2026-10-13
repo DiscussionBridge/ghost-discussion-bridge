@@ -1,18 +1,37 @@
 {
   "name": "ghost-discussion-bridge",
-  "version": "0.2.0-alpha.24",
+  "version": "0.3.0-alpha.1",
   "private": true,
   "type": "module",
+  "files": [
+    "assets/discourse-wordmark.svg",
+    "assets/DISCOURSE_WORDMARK_SOURCE.md",
+    "demo/",
+    "docs/",
+    "public/discussionbridge-loader.js",
+    "public/discussionbridge-loader.css",
+    "public/discussionbridge-rich-content.js",
+    "scripts/build-browser.mjs",
+    "scripts/prepare-installation.mjs",
+    "src/*.mjs",
+    "lib/cms-*.mjs",
+    "lib/cms-schema.json",
+    "discussionbridge-release.json",
+    "npm-shrinkwrap.json"
+  ],
   "scripts": {
     "build:browser": "node scripts/build-browser.mjs",
     "start": "node src/index.mjs",
     "sync:publications": "node src/sync-publications.mjs",
     "install:rich-content": "node src/install-rich-content.mjs",
+    "prepare:install": "node scripts/prepare-installation.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "npm run build:browser && node --check src/version.mjs && node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/ghost-admin-client.mjs && node --check src/install-rich-content.mjs && node --check src/operator-surface.mjs && node --check src/publication-operations.mjs && node --check src/publication-sync.mjs && node --check src/sync-publications.mjs && node --check src/state-store.mjs && node --check src/state-transaction-worker.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check src/browser-loader.mjs && node --check public/discussionbridge-loader.js"
+    "check": "npm run build:browser && node --check src/version.mjs && node --check src/config.mjs && node --check src/bridge-client.mjs && node --check src/ghost-admin-client.mjs && node --check src/install-rich-content.mjs && node --check src/operator-surface.mjs && node --check src/publication-operations.mjs && node --check src/publication-sync.mjs && node --check src/sync-publications.mjs && node --check src/state-store.mjs && node --check src/state-transaction-worker.mjs && node --check src/service.mjs && node --check src/index.mjs && node --check src/register-presentation.mjs && node --check src/browser-loader.mjs && node --check public/discussionbridge-loader.js && node --check src/deployment.mjs && node --check src/browser-assets.mjs && node --check src/browser-deployment.mjs && node --check src/installation.mjs && node --check scripts/prepare-installation.mjs && node --check src/bounded-response.mjs && node --check src/publication-content.mjs && node --check src/source-publication.mjs && node --check src/source-write.mjs && node --check src/publication-scheduler.mjs"
   },
   "dependencies": {
-    "sanitize-html": "2.17.7"
+    "sanitize-html": "2.17.7",
+    "entities": "8.0.0",
+    "htmlparser2": "12.0.0"
   },
   "devDependencies": {
     "esbuild": "0.25.10",

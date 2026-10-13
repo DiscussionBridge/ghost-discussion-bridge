@@ -2,25 +2,35 @@
 
 ```sh
 git clone https://github.com/DiscussionBridge/ghost-discussion-bridge.git
+git -C ghost-discussion-bridge checkout --detach FULL_RELEASE_COMMIT_ID
 ```
 
-This is the publishing-side Ghost adapter for the DiscussionBridge Alpha. It
-runs as a small loopback-only Node service beside Ghost.
+Replace `FULL_RELEASE_COMMIT_ID` with the complete commit ID from the selected
+release record. Install from that immutable checkout or its verified package;
+a branch checkout or the version string alone does not identify these files.
 
-- Ghost `post.published` webhooks enter through one exact path and must carry
+This is the publishing-side Ghost adapter for the DiscussionBridge Alpha. It
+runs as an external, loopback-only Node service on the adapter operator's Linux
+host. Every operator uses the same essential installation, without custom
+routing on the customer's Ghost server. Start with
+[the common installation guide](docs/INSTALLATION.md).
+
+- Selected Ghost `post.published` and `post.published.edited` webhooks enter through one exact path and must carry
   Ghost's native `X-Ghost-Signature` HMAC with a current timestamp.
 - The service sends bounded authenticated create-or-resolve requests to the
   receiving Discourse plugin and durably stores the returned resource/topic
   identity.
-- The request carries Ghost's rendered published HTML as a bounded content
-  snapshot, so the receiving topic contains the article rather than only a
-  companion link. Empty or oversized source content fails before delivery.
+- The request carries the complete portable HTML digest and authoritative
+  native dates. Large content uses a bounded valid-HTML excerpt with a canonical
+  Read More link; the native original is never truncated. The existing posts
+  state retains the exact source revision, compare-and-swap operand and receipt
+  so an ambiguous retry cannot erase an accepted update.
 - Ghost's stable author identities, display names, profile URLs and primary
   author are reported to the receiving connection. The forum operator still
   chooses fixed or mapped Discourse authorship in that connection's Authors
   tab; source identities never acquire forum authority by themselves.
 - Explicitly registered From Discourse resources are pulled server-side and
-  exposed through a same-origin Nginx route as sanitized HTML. The supplied
+  exposed through the adapter's public HTTPS route as sanitized HTML. The supplied
   loader renders that HTML into an explicit Ghost post placeholder, then adds
   the same topic's comments-only Interactive surface. The imported first
   post remains the article and is not repeated in the discussion frame; its
@@ -28,14 +38,23 @@ runs as a small loopback-only Node service beside Ghost.
   topic identity is required before either presentation is exposed.
 - A From Discourse binding may separately authorize **native
   materialization**. `npm run sync:publications` then creates or updates a
-  genuine Ghost post through Ghost's Admin API. Presentation-only records are
-  ignored. The adapter stores the Discourse post revision and Ghost post ID,
-  so an exact retry is unchanged and a later first-post revision updates the
-  same Ghost post. The native post carries a source/provenance note and its
-  mapped Interactive discussion; it is tagged `#discussionbridge-source`,
+  genuine Ghost post or page through Ghost's Admin API. Select
+  `DISCUSSIONBRIDGE_PUBLICATION_TYPE=post|page` before first publication;
+  omission retains posts. Existing mappings are posts and changing their type
+  requires reconciliation. Presentation-only records are ignored.
+  The one publication state map stores coherent source editions, native type and ID,
+  so source/wiki body, title, dates and author/forum-name changes update the same
+  post. Owned body boundaries and precise managed-field evidence preserve
+  unrelated native content/tags and local Simple/Full/Interactive selections;
+  conflicting local managed edits require attention. The native post carries
+  generic source/provenance metadata and its selected discussion; it is tagged `#discussionbridge-source`,
   not the outbound `#discussionbridge` opt-in, preventing a publication loop.
+- An explicit source withdrawal drafts only the exactly owned native post and
+  removes public presentation access. Protected state retains identity/metadata;
+  native Ghost retains the private body for recovery. Restoration uses the same
+  post. Public URL/cache withdrawal is not claimed without verification.
 - Published Ghost posts can render their exact mapped Discourse discussion.
-  The same-origin loader resolves the current canonical Ghost URL through the
+  The external loader resolves the current canonical Ghost URL through the
   adapter's nonsecret comments endpoint, then starts Discourse's standard
   comments embed with the already-recorded topic ID. No credential or topic
   identity is placed in Ghost content.
@@ -50,10 +69,8 @@ runs as a small loopback-only Node service beside Ghost.
   discussions scroll inside the frame instead of growing the host page without
   bound. Ghost does not inherit Discourse's otherwise implicit 600px embed
   default. An empty
-  attribute remains the backwards-compatible `full` mode. The historical
-  `fullInteractive` token is accepted as a compatibility alias, normalized to
-  `interactive`, and never emitted by new adapter output; every other value
-  fails closed.
+  attribute selects `full` mode. Only `simple`, `full` and `interactive` are
+  accepted; every other value fails closed, without an alias or conversion.
   The stock Ghost demo's theme-level integration selects the per-post mode from
   internal tags: `#discussionbridge-simple`, `#discussionbridge-full`, or the
   default `#discussionbridge` Interactive path. The mode marker belongs to
@@ -90,20 +107,24 @@ button is an exact-origin POST and shares the same durable operation path as
 `npm run sync:publications`. The page never displays the receiver credential,
 Ghost Admin API key, webhook secret or operator password.
 
-For a separately hosted companion, set `DISCUSSIONBRIDGE_OPERATOR_ORIGIN` to
-the operator page's public HTTPS origin. It defaults to the Ghost origin for a
-same-host installation. This makes the status boundary portable without
+Operator access defaults to `DISCUSSIONBRIDGE_ADAPTER_ORIGIN`, never the Ghost
+origin. The common installer uses that same adapter address for every operator.
+`DISCUSSIONBRIDGE_OPERATOR_ORIGIN` remains an explicit advanced override for an
+operator's separately configured HTTPS surface. This keeps status portable without
 introducing shared hosting, tenancy or a DiscussionBridge control plane.
 
 ## Required environment
 
 `DISCUSSIONBRIDGE_SERVER_URL`, `DISCUSSIONBRIDGE_CONNECTION_ID`,
 `DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE`, `DISCUSSIONBRIDGE_GHOST_ORIGIN`,
+`DISCUSSIONBRIDGE_ADAPTER_ORIGIN`,
 `DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE`, and
 `DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE`, and
 `DISCUSSIONBRIDGE_STATE_FILE`. `DISCUSSIONBRIDGE_OPERATOR_PASSWORD_FILE`
 enables the protected operator surface. `DISCUSSIONBRIDGE_OPERATOR_ORIGIN` is
-optional and defaults to the Ghost origin. `DISCUSSIONBRIDGE_PORT` defaults to
+optional and defaults to the adapter origin. `DISCUSSIONBRIDGE_GHOST_ADMIN_ORIGIN`
+optionally selects a separate Ghost Admin HTTPS origin; it otherwise uses the
+public Ghost origin. `DISCUSSIONBRIDGE_PORT` defaults to
 `8792` and `DISCUSSIONBRIDGE_LANE` is optional.
 
 Only posts carrying Ghost's internal `#discussionbridge` tag are eligible.
@@ -163,20 +184,24 @@ The Ghost post contains an HTML card such as:
 
 ```html
 <div data-discussionbridge-resource="RESOURCE_UUID"></div>
-<script defer src="/discussionbridge/assets/loader.js"></script>
 ```
+
+Use the prepared Site Footer bootstrap for the script. For a manually placed
+loader, use the exact absolute asset URL from that preparation, not a relative
+Ghost-server URL. The stock footer recognizes connected/source internal tags;
+an explicit placeholder on another page needs its explicitly placed loader.
 
 A To Discourse post can render its mapped replies with:
 
 ```html
 <div data-discussionbridge-comments="interactive"></div>
-<script defer src="/discussionbridge/assets/loader.js"></script>
 ```
 
 Managed Ghost hosts do not need to expose shell access to each publisher. The
-provider installs and operates the companion adapter service on the Ghost
-server, together with its protected credentials, persistent state and narrow
-reverse-proxy routes. Ghost Admin configures the native custom integration; it
+operator installs and operates the external adapter on its chosen Linux host,
+together with protected credentials, persistent state and that host's HTTPS
+proxy. The customer Ghost server needs no custom route. Ghost Admin configures
+the native custom integration and supported Site Footer hook; it
 does not install the companion service. See
 [`docs/MANAGED_HOSTING.md`](docs/MANAGED_HOSTING.md) for the exact boundary.
 
@@ -188,12 +213,8 @@ navigation, it adds one accessible footer collection for the DiscussionBridge
 forum, GitHub organization, Bluesky, Discord invite, Mastodon, Reddit, X and
 YouTube.
 
-The live demo serves this exact asset at
-`/discussionbridge/assets/demo-navigation.js`. Its current exact SHA-256 is
-recorded after each deployed demo update.
-Its root-protected rollback package is
-`/var/backups/discussionbridge/ghost-social-links-pre-20260901`.
-The stock Ghost defaults that linked X and Facebook to Ghost's own accounts
-were cleared during this deployment; their exact prior values are preserved in
-that rollback package. The dedicated DiscussionBridge footer is therefore the
-only social collection on the demo.
+This is an optional demo/theme sample. The adapter's browser-asset endpoint
+serves only `loader.js`, `loader.css` and `rich-content.js`; it does not serve
+the demo navigation script. An operator using the sample supplies its own
+supported theme or code-injection hook and static asset address. Normal adapter
+installation does not change Ghost's social links or theme settings.

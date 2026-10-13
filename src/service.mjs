@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import sanitizeHtml from "sanitize-html";
 import { BridgeClient, ghostRecord } from "./bridge-client.mjs";
 import { operatorAuthorized, operatorCsrfValid, renderOperatorPage } from "./operator-surface.mjs";
+import { serveBrowserAsset } from "./browser-assets.mjs";
+import { nativeTopicUrl, publishSource } from "./source-write.mjs";
 
 const MAX_WEBHOOK_BYTES = 131_072;
 const INITIAL_SIMPLE_REPLIES = 5;
@@ -160,6 +162,26 @@ export function buildServer(config, store, client = new BridgeClient(config), op
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://127.0.0.1");
+      const publicRead = ["/comments", "/simple"].includes(url.pathname) || url.pathname.startsWith("/presentation/") || url.pathname.startsWith("/assets/");
+      if (publicRead) {
+        // These routes were already public. CORS is a browser boundary, not
+        // authority to access private forum content or administrative routes.
+        response.setHeader("Vary", "Origin");
+        const origin = request.headers.origin;
+        const allowedMethods = url.pathname.startsWith("/assets/") ? ["GET", "HEAD"] : ["GET"];
+        if (origin !== undefined && origin !== config.ghostOrigin) return json(response, 403, { error: "origin_denied" });
+        if (origin === config.ghostOrigin) response.setHeader("Access-Control-Allow-Origin", config.ghostOrigin);
+        if (request.method === "OPTIONS") {
+          if (origin !== config.ghostOrigin || !allowedMethods.includes(request.headers["access-control-request-method"]) || request.headers["access-control-request-headers"]) return json(response, 403, { error: "preflight_denied" });
+          response.writeHead(204, { "Access-Control-Allow-Methods": allowedMethods.join(", "), "Access-Control-Max-Age": "600", "Cache-Control": "no-store" });
+          return response.end();
+        }
+        if (!allowedMethods.includes(request.method)) return json(response, 405, { error: "method_not_allowed" });
+      }
+      if (["GET", "HEAD"].includes(request.method) && url.pathname.startsWith("/assets/")) {
+        if (serveBrowserAsset(request, response, url)) return;
+        return json(response, 404, { error: "not_found" });
+      }
       if (url.pathname === "/operator" || url.pathname === "/operator/" || url.pathname === "/operator/synchronize") {
         if (!config.operatorPassword || !operatorAuthorized(request.headers.authorization, config.operatorPassword)) {
           response.writeHead(401, { "WWW-Authenticate": 'Basic realm="DiscussionBridge operator", charset="UTF-8"', "Cache-Control": "no-store" });
@@ -171,6 +193,7 @@ export function buildServer(config, store, client = new BridgeClient(config), op
           return response.end(renderOperatorPage(config, await store.read(), notice));
         }
         if (url.pathname === "/operator/synchronize" && request.method === "POST") {
+          if (request.headers.origin !== config.operatorOrigin) return json(response, 403, { error: "origin_denied" });
           if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/x-www-form-urlencoded")) return json(response, 415, { error: "content_type" });
           const form = new URLSearchParams(await body(request, 1024));
           if (!operatorCsrfValid(form.get("csrf"), config.operatorPassword)) return json(response, 403, { error: "csrf_denied" });
@@ -178,7 +201,7 @@ export function buildServer(config, store, client = new BridgeClient(config), op
           let summary; let notice;
           try {
             summary = await operations.synchronize();
-            notice = `Synchronization complete: ${summary.created} created, ${summary.updated} updated, ${summary.unchanged} already current, ${summary.failed} failed.`;
+            notice = `Synchronization complete: ${summary.created} created, ${summary.updated} updated, ${summary.unchanged} already current, ${summary.failed} failed.${summary.withdrawn ? ` ${summary.withdrawn} drafted locally; public withdrawal verification remains pending.` : ""}`;
           } catch {
             notice = "Synchronization failed. Review the protected failure details below, correct the cause, and retry.";
           }
@@ -188,18 +211,11 @@ export function buildServer(config, store, client = new BridgeClient(config), op
       }
       if (request.method === "POST" && url.pathname === "/webhooks/ghost") {
         if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return json(response, 415, { error: "content_type" });
-        const rawBody = await body(request);
+        const rawBody = await body(request, config.webhookMaximumBytes ?? MAX_WEBHOOK_BYTES);
         if (!validGhostSignature(request.headers["x-ghost-signature"], rawBody, config.webhookSecret)) return json(response, 404, { error: "not_found" });
         const payload = JSON.parse(rawBody);
         const record = ghostRecord(payload, config, `ghost-${randomUUID()}`);
-        const result = await client.resolve(record);
-        if (!UUID.test(result.resource_id ?? "") || !Number.isSafeInteger(result.topic_id) || result.topic_id <= 0 || !["created", "resolved"].includes(result.outcome) || result.core_fallback !== false) {
-          throw new Error("Invalid DiscussionBridge success response");
-        }
-        const topicUrl = exactTopicUrl(result.topic_url, config.serverUrl);
-        await store.update(async (state) => {
-          state.posts[record.external_id] = { resource_id: result.resource_id, topic_id: result.topic_id, topic_url: topicUrl, outcome: result.outcome, canonical_url: record.canonical_url, updated_at: new Date().toISOString() };
-        });
+        const result = await publishSource(record, config, store, client);
         return json(response, 200, { accepted: true, resource_id: result.resource_id, topic_id: result.topic_id, outcome: result.outcome });
       }
       if (request.method === "GET" && url.pathname.startsWith("/presentation/")) {
@@ -209,9 +225,10 @@ export function buildServer(config, store, client = new BridgeClient(config), op
         if (!state.presentations[resourceId]) return json(response, 404, { error: "not_found" });
         const responseRecord = await client.record(resourceId);
         const record = responseRecord?.bridge_record;
+        if (record?.resource_id === resourceId && record.source?.status === "withdrawn") return json(response, 410, { error: "source_withdrawn" });
         if (!record || record.direction !== "from_discourse" || record.state !== "healthy" || record.resource_id !== resourceId || typeof record.content_html !== "string") throw new Error("Invalid presentation record");
         if (!Number.isSafeInteger(record.topic_id) || record.topic_id <= 0) throw new Error("Invalid presentation topic identity");
-        const topicUrl = exactTopicUrl(record.topic_url, config.serverUrl);
+        const topicUrl = nativeTopicUrl(record.topic_url, config.serverUrl, record.topic_id);
         const cooked = sanitizeHtml(record.content_html, {
           allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img"]),
           allowedAttributes: {
@@ -236,36 +253,37 @@ export function buildServer(config, store, client = new BridgeClient(config), op
         });
         const safeTopicUrl = topicUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
         const safeForumOrigin = config.serverUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
-        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" });
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
         return response.end(`<section class="discussionbridge-presentation">${cooked}<div class="discussionbridge-comments-header"><h2>Discussion</h2><a href="${safeTopicUrl}" rel="nofollow noopener noreferrer">Open discussion</a></div><div data-discussionbridge-presentation-comments data-topic-id="${record.topic_id}" data-topic-url="${safeTopicUrl}" data-forum-origin="${safeForumOrigin}"></div></section>`);
       }
       if (request.method === "GET" && url.pathname === "/comments") {
         const sourceUrl = exactGhostSource(url.searchParams.get("source"), config.ghostOrigin);
         const state = await store.read();
         const publications = Object.entries(state.publications ?? {}).map(([resourceId, publication]) => ({ ...publication, resource_id: resourceId }));
-        const matches = [...Object.values(state.posts), ...publications].filter((post) => post?.canonical_url === sourceUrl);
+        const matches = [...Object.values(state.posts), ...publications].filter((post) => post?.canonical_url === sourceUrl && post.source_status !== "withdrawn");
         if (matches.length !== 1) return json(response, 404, { error: "not_found" });
         const post = matches[0];
         if (!UUID.test(post.resource_id ?? "") || !Number.isSafeInteger(post.topic_id) || post.topic_id <= 0) throw new Error("Invalid stored discussion identity");
-        const topicUrl = exactTopicUrl(post.topic_url, config.serverUrl);
+        const topicUrl = nativeTopicUrl(post.topic_url, config.serverUrl, post.topic_id);
         return json(response, 200, { topic_id: post.topic_id, topic_url: topicUrl, forum_origin: config.serverUrl });
       }
       if (request.method === "GET" && url.pathname === "/simple") {
         const sourceUrl = exactGhostSource(url.searchParams.get("source"), config.ghostOrigin);
         const state = await store.read();
-        const matches = Object.values(state.posts).filter((post) => post?.canonical_url === sourceUrl);
+        const publications = Object.values(state.publications ?? {});
+        const matches = [...Object.values(state.posts), ...publications].filter((post) => post?.canonical_url === sourceUrl && post.source_status !== "withdrawn");
         if (matches.length !== 1) return json(response, 404, { error: "not_found" });
         const post = matches[0];
         if (!Number.isSafeInteger(post.topic_id) || post.topic_id <= 0) throw new Error("Invalid stored discussion identity");
-        exactTopicUrl(post.topic_url, config.serverUrl);
+        nativeTopicUrl(post.topic_url, config.serverUrl, post.topic_id);
         const html = await renderSimpleDiscussion(client, post.topic_id, config.serverUrl);
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" });
         return response.end(html);
       }
       if (request.method === "GET" && url.pathname === "/health") return json(response, 200, { status: "ok" });
       return json(response, 404, { error: "not_found" });
-    } catch (error) {
-      return json(response, 502, { error: "adapter_failure", reason: typeof error.reason === "string" ? error.reason : "request_failed" });
+    } catch {
+      return json(response, 502, { error: "adapter_failure", reason: "request_failed" });
     }
   });
 }

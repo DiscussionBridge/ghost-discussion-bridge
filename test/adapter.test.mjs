@@ -19,6 +19,7 @@ import { buildServer, exactGhostSource, renderSimpleDiscussion, validGhostSignat
 import { PRODUCT_VERSION } from "../src/version.mjs";
 
 const execFileAsync = promisify(execFile);
+const deployment = { adapterOrigin: "https://adapter.example", ghostOrigin: "https://ghost.example" };
 
 test("package, shrinkwrap, and runtime versions are identical", async () => {
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -29,7 +30,7 @@ test("package, shrinkwrap, and runtime versions are identical", async () => {
 });
 
 test("rich-content code injection is additive and idempotent", () => {
-  const script = mergeCodeInjection(null);
+  const script = mergeCodeInjection(null, deployment);
   assert.match(script, /data-discussionbridge-comments-bootstrap/);
   assert.match(script, /tag-hash-discussionbridge-source/);
   assert.match(script, /if \(!connectedPost && !sourcePost\) return/);
@@ -37,14 +38,14 @@ test("rich-content code injection is additive and idempotent", () => {
   assert.match(script, /host = document\.createElement\("section"\)/);
   assert.doesNotMatch(script, /querySelector\("\.gh-comments"\)/);
   assert.match(script, /discussionbridge-comments-host/);
-  assert.match(script, /0\.2\.0-alpha\.24/);
-  assert.equal(mergeCodeInjection("<meta name=demo>"), `<meta name=demo>\n${script}`);
-  assert.equal(mergeCodeInjection(script), script);
-  const upgraded = mergeCodeInjection(script.replace("0.2.0-alpha.24", "0.1.0-alpha.99"));
-  assert.match(upgraded, /0\.2\.0-alpha\.24/);
+  assert.match(script, /0\.3\.0-alpha\.1/);
+  assert.equal(mergeCodeInjection("<meta name=demo>", deployment), `<meta name=demo>\n${script}`);
+  assert.equal(mergeCodeInjection(script, deployment), script);
+  const upgraded = mergeCodeInjection(script.replace("0.3.0-alpha.1", "0.1.0-alpha.99"), deployment);
+  assert.match(upgraded, /0\.3\.0-alpha\.1/);
   assert.doesNotMatch(upgraded, /0\.1\.0-alpha\.99/);
   assert.equal((upgraded.match(/data-discussionbridge-comments-bootstrap/g) ?? []).length, 1);
-  assert.throws(() => mergeCodeInjection({}), /Invalid Ghost code injection setting/);
+  assert.throws(() => mergeCodeInjection({}, deployment), /Invalid Ghost code injection setting/);
 });
 
 test("rich-content installation reports Ghost's manual Site Footer boundary", async () => {
@@ -54,7 +55,7 @@ test("rich-content installation reports Ghost's manual Site Footer boundary", as
     error.status = 403;
     throw error;
   } };
-  const result = await installRichContent(client);
+  const result = await installRichContent(client, deployment);
   assert.equal(result.updated, false);
   assert.equal(result.manual_required, true);
   assert.match(result.location, /Code injection → Site Footer/u);
@@ -97,7 +98,7 @@ async function config() {
   await writeFile(join(root, "webhook"), "w".repeat(32));
   await writeFile(join(root, "admin-key"), `${"a".repeat(24)}:${"b".repeat(64)}`);
   await writeFile(join(root, "operator-password"), "o".repeat(32));
-  return loadConfig({ DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example", DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567", DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: join(root, "secret"), DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example", DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE: join(root, "webhook"), DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE: join(root, "admin-key"), DISCUSSIONBRIDGE_STATE_FILE: join(root, "state.json"), DISCUSSIONBRIDGE_LANE: "ghost-alpha", DISCUSSIONBRIDGE_OPERATOR_PASSWORD_FILE: join(root, "operator-password") });
+  return loadConfig({ DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example", DISCUSSIONBRIDGE_ADAPTER_ORIGIN: deployment.adapterOrigin, DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567", DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: join(root, "secret"), DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example", DISCUSSIONBRIDGE_GHOST_WEBHOOK_SECRET_FILE: join(root, "webhook"), DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE: join(root, "admin-key"), DISCUSSIONBRIDGE_STATE_FILE: join(root, "state.json"), DISCUSSIONBRIDGE_LANE: "ghost-alpha", DISCUSSIONBRIDGE_OPERATOR_PASSWORD_FILE: join(root, "operator-password") });
 }
 
 test("connection secret and lane match the receiver admission grammar", async () => {
@@ -109,6 +110,7 @@ test("connection secret and lane match the receiver admission grammar", async ()
   await writeFile(adminKeyFile, `${"a".repeat(24)}:${"b".repeat(64)}`);
   const environment = {
     DISCUSSIONBRIDGE_SERVER_URL: "https://forum.example",
+    DISCUSSIONBRIDGE_ADAPTER_ORIGIN: deployment.adapterOrigin,
     DISCUSSIONBRIDGE_CONNECTION_ID: "dbc_0123456789abcdef01234567",
     DISCUSSIONBRIDGE_CONNECTION_SECRET_FILE: secretFile,
     DISCUSSIONBRIDGE_GHOST_ORIGIN: "https://ghost.example",
@@ -133,7 +135,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.equal(record.external_id, "ghost-post:abc123");
   assert.equal(record.lane, "ghost-alpha");
   assert.equal(record.adapter_id, "ghost-discussion-bridge");
-  assert.equal(record.adapter_version, "0.2.0-alpha.24");
+  assert.equal(record.adapter_version, "0.3.0-alpha.1");
   assert.deepEqual(record.source_authors, [
     { id: "ghost-author:author-1", name: "Primary Writer", profile_url: "https://ghost.example/author/primary/" },
     { id: "ghost-author:author-2", name: "Editor" },
@@ -142,7 +144,7 @@ test("maps an authoritative published Ghost post and its authors", async () => {
   assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "<p>X</p>", url: "https://evil.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /outside/);
   assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "<p>X</p>", url: "https://ghost.example/x/", status: "published", tags: [] } } }, cfg, "c"), /opted in/);
   assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "  ", url: "https://ghost.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /published content/);
-  assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "x".repeat((48 * 1024) + 1), url: "https://ghost.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /published content/);
+  assert.throws(() => ghostRecord({ post: { current: { id: "x", title: "X", html: "x".repeat((48 * 1024) + 1), url: "https://ghost.example/x/", status: "published", tags: [{ name: "#discussionbridge" }] } } }, cfg, "c"), /source dates/);
 });
 
 test("fails closed on ambiguous Ghost authorship", async () => {
@@ -225,9 +227,10 @@ test("operator status is protected, credential-free, and synchronizes with a bou
     assert.doesNotMatch(html, new RegExp(`${"s".repeat(32)}|${"w".repeat(32)}|${"a".repeat(24)}:${"b".repeat(64)}|${"o".repeat(32)}`));
     const csrf = /name="csrf" value="([a-f0-9]{64})"/u.exec(html)?.[1];
     assert.ok(csrf);
-    const headers = { Authorization: authorization, "Content-Type": "application/x-www-form-urlencoded" };
-    assert.equal((await fetch(`${origin}/operator/synchronize`, { method: "POST", headers: { ...headers, Origin: "https://browser-supplied.example" }, body: "csrf=invalid" })).status, 403);
-    const synchronized = await fetch(`${origin}/operator/synchronize`, { method: "POST", headers: { ...headers, Origin: "https://browser-supplied.example" }, body: `csrf=${csrf}`, redirect: "manual" });
+    const headers = { Authorization: authorization, "Content-Type": "application/x-www-form-urlencoded", Origin: cfg.operatorOrigin };
+    assert.equal((await fetch(`${origin}/operator/synchronize`, { method: "POST", headers, body: "csrf=invalid" })).status, 403);
+    assert.equal((await fetch(`${origin}/operator/synchronize`, { method: "POST", headers: { ...headers, Origin: "https://browser-supplied.example" }, body: `csrf=${csrf}` })).status, 403);
+    const synchronized = await fetch(`${origin}/operator/synchronize`, { method: "POST", headers, body: `csrf=${csrf}`, redirect: "manual" });
     assert.equal(synchronized.status, 303);
     assert.equal(synchronized.headers.get("location"), "/discussionbridge/operator/");
     const noticeCookie = synchronized.headers.get("set-cookie")?.split(";", 1)[0];
@@ -315,18 +318,20 @@ test("Ghost comment source is exact-origin and canonical", () => {
   assert.throws(() => exactGhostSource("https://ghost.example/article/#comments", "https://ghost.example"));
 });
 
-test("comments mode uses Interactive publicly while accepting the historical token", () => {
+test("comments mode accepts only canonical Interactive", () => {
   assert.equal(normalizeCommentsMode("interactive"), "interactive");
-  assert.equal(normalizeCommentsMode("fullInteractive"), "interactive");
   assert.equal(isInteractiveCommentsMode("interactive"), true);
-  assert.equal(isInteractiveCommentsMode("fullInteractive"), true);
+  for (const mode of ["fullInteractive", "full_interactive"]) {
+    assert.equal(normalizeCommentsMode(mode), null);
+    assert.equal(isInteractiveCommentsMode(mode), false);
+  }
   assert.equal(normalizeCommentsMode("bridge"), null);
 });
 
 test("reader loader offers simple, full, and Interactive mapped comments", async () => {
   const loader = await readFile(new URL("../src/browser-loader.mjs", import.meta.url), "utf8");
   assert.match(loader, /normalizeCommentsMode/);
-  assert.match(loader, /\/discussionbridge\/simple\?source=/);
+  assert.match(loader, /deployment\.base\}simple\?source=/);
   assert.match(loader, /fullApp: true/);
   assert.match(loader, /embedHeight: "800px"/);
   assert.match(loader, /dynamicHeight: false/);
@@ -356,7 +361,11 @@ test("reader loader offers simple, full, and Interactive mapped comments", async
   assert.match(loader, /discussionbridge-comments-host \.discussionbridge-credit__brand:visited/);
   assert.match(loader, /discussionbridgeCommentsMounted/);
   assert.match(loader, /discussionbridgePresentationMounted/);
-  assert.match(loader, /\/discussionbridge\/assets\/loader\.css/);
+  assert.match(loader, /link\.href = deployment\.stylesheet/);
+  assert.match(loader, /const loaderAddress = document\.currentScript\?\.src/);
+  assert.match(loader, /browserDeployment\(loaderAddress\)/);
+  assert.match(loader, /credentials: "omit"/);
+  assert.doesNotMatch(loader, /credentials: "same-origin"/);
   assert.match(loader, /font-size:14px/);
   assert.doesNotMatch(loader, /connectionSecret|X-DiscussionBridge-Secret/);
 });
@@ -600,7 +609,7 @@ test("native publication requires explicit authority and exact identities", asyn
   assert.match(publication.revisionTag, /^#discussionbridge-revision-[0-9a-f]{64}$/u);
   assert.match(publication.html, /data-discussionbridge-comments="interactive"/);
   assert.match(publication.html, /\/discussionbridge\/assets\/loader\.js/);
-  assert.match(publication.html, /Ghost 6\.59\.0/);
+  assert.match(publication.html, /Ghost · DiscussionBridge/);
   assert.equal(nativePublication(publicationRecord({ bindings: [{ ...publicationRecord().bindings[0], native_materialization: false }] }), cfg), null);
   assert.throws(() => nativePublication(publicationRecord({ source: { ...publicationRecord().source, origin: "https://other.example" } }), cfg), /source/);
   assert.throws(() => nativePublication(publicationRecord({ bindings: [{ ...publicationRecord().bindings[0], canonical_url: "https://ghost.example/too/deep/" }] }), cfg), /slug/);
@@ -628,7 +637,8 @@ test("publication sync creates once, skips presentation records and exact retry 
   assert.equal(created.length, 1);
   const state = await store.read();
   assert.equal(state.publications[publicationRecord().resource_id].revision, "post:149:version:1");
-  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.2.0-alpha.24");
+  assert.equal(state.publications[publicationRecord().resource_id].adapter_version, "0.3.0-alpha.1");
+  assert.equal(state.publications[publicationRecord().resource_id].presentation_revision, nativePublication(publicationRecord(), cfg).presentationRevision);
   assert.doesNotMatch(JSON.stringify(state), /bbbbbbbb/);
 });
 
@@ -698,10 +708,10 @@ test("expired pending intent is recovered by marker lookup after restart", async
   const bridge = { records: async () => ({ bridge_records: [publicationRecord()], pagination: { page: 1, pages: 1, total: 1, snapshot: "snapshot-one" } }) };
   let creates = 0;
   const ghost = {
-    findByResource: async () => [{ id: "c".repeat(24), slug: publication.slug, url: publication.destination, html: publication.html, tags: [{ name: publication.resourceTag }, { name: publication.revisionTag }], updated_at: "2026-09-02T00:00:00.000Z" }],
+    findByResource: async () => [{ id: "c".repeat(24), title: publication.title, slug: publication.slug, url: publication.destination, html: publication.html, tags: [{ name: publication.resourceTag }, { name: publication.revisionTag }, { name: publication.presentationTag }], updated_at: "2026-09-02T00:00:00.000Z" }],
     create: async () => { creates += 1; throw new Error("must not create"); },
   };
-  assert.equal((await syncPublications(cfg, store, bridge, ghost)).updated, 1);
+  assert.equal((await syncPublications(cfg, store, bridge, ghost)).unchanged, 1);
   assert.equal(creates, 0);
   assert.equal((await store.read()).publications[publication.resourceId].ghost_post_id, "c".repeat(24));
 });
@@ -719,11 +729,16 @@ test("expired create intent without a marker fails closed instead of creating ag
     findByResource: async () => [],
     create: async () => { creates += 1; },
   };
-  const result = await syncPublications(cfg, store, bridge, ghost);
-  assert.equal(result.failed, 1);
-  assert.equal(creates, 0);
-  assert.match(result.errors[0].reason, /requires reconciliation/u);
-  assert.equal((await store.read()).publications[publication.resourceId].state, "attention");
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const restarted = new StateStore(cfg.stateFile);
+    const result = await syncPublications(cfg, restarted, bridge, ghost);
+    assert.equal(result.failed, 1);
+    assert.equal(creates, 0);
+    assert.match(result.errors[0].reason, /requires reconciliation/u);
+    const persisted = (await restarted.read()).publications[publication.resourceId];
+    assert.equal(persisted.state, "attention");
+    assert.equal(persisted.create_outcome_uncertain, true);
+  }
 });
 
 test("multiple Ghost resource markers fail closed before create", async () => {

@@ -1,0 +1,3569 @@
+{
+  "implementation_version": "0.3.0-alpha.1",
+  "status": "build_candidate",
+  "authority": "Phil's October13 confirmation: preserved Alpha.23 CMS subset only",
+  "source_identities": {
+    "normative_v2_semantics": {
+      "path": "approved-packet/ADAPTER_PROTOCOL_V2_WIRE_SPECIFICATION_20261009.md",
+      "bytes": 75343,
+      "sha256": "56f327cf5a9815b65c003a2fd42723c89946f6456905161d497d30dd8b1399e7"
+    },
+    "normative_v2_types_routes": {
+      "path": "approved-packet/ADAPTER_PROTOCOL_V2_WIRE_PROPOSAL_20261009.json",
+      "bytes": 193449,
+      "sha256": "5ee46f7190308914dd88c27cfad499709a899b517ac11ac6fe362de1f9f8cd8f"
+    },
+    "v2_positive_examples": {
+      "path": "approved-packet/ADAPTER_PROTOCOL_V2_EXAMPLES_20261009.json",
+      "bytes": 83516,
+      "sha256": "dbb6fdb51cd75e3fe5f276582d293300f684e44e39cc84e29d7927485f145add"
+    },
+    "v2_negative_cases_and_runtime_plan": {
+      "path": "approved-packet/ADAPTER_PROTOCOL_V2_CONFORMANCE_CASES_20261009.json",
+      "bytes": 105180,
+      "sha256": "c5f2bae11a90337541f74fe5ef10d87262cdc986551c6a40e0761d99a7d52b13"
+    }
+  },
+  "excluded": [
+    "Operator Service",
+    "Network",
+    "Workspace",
+    "Federation",
+    "URL transport amendment"
+  ],
+  "grammar": "DB-PROPOSED-TYPES-1",
+  "types": {
+    "UUID": {
+      "kind": "string",
+      "format": "lowercase UUID",
+      "utf8_maximum_bytes": 36,
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$",
+      "rules": [
+        "nil UUID is rejected"
+      ]
+    },
+    "ConnectionId": {
+      "kind": "string",
+      "pattern": "^dbc_[a-f0-9]{24}$"
+    },
+    "OpaqueId": {
+      "kind": "string",
+      "utf8_minimum_bytes": 1,
+      "utf8_maximum_bytes": 255,
+      "control_characters": "reject",
+      "normalization": "none"
+    },
+    "Revision": {
+      "kind": "string",
+      "utf8_minimum_bytes": 1,
+      "utf8_maximum_bytes": 128,
+      "control_characters": "reject",
+      "normalization": "none"
+    },
+    "Label": {
+      "kind": "string",
+      "utf8_minimum_bytes": 1,
+      "utf8_maximum_bytes": 200,
+      "control_characters": "reject"
+    },
+    "Title": {
+      "kind": "string",
+      "utf8_minimum_bytes": 1,
+      "utf8_maximum_bytes": 1024,
+      "control_characters": "reject"
+    },
+    "Url": {
+      "kind": "string",
+      "format": "absolute HTTPS URL without userinfo or fragment",
+      "utf8_maximum_bytes": 2048
+    },
+    "Sha256": {
+      "kind": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "Instant": {
+      "kind": "string",
+      "format": "YYYY-MM-DDTHH:mm:ss.SSSZ; valid UTC date; leap second value 60 rejected"
+    },
+    "UInt": {
+      "kind": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "PositiveUInt": {
+      "kind": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "CoreId": {
+      "kind": "string",
+      "format": "canonical unsigned decimal string representing 1..9223372036854775807",
+      "pattern": "^[1-9][0-9]{0,18}$"
+    },
+    "Boolean": {
+      "kind": "boolean",
+      "coercion": "none"
+    },
+    "Cursor": {
+      "kind": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "utf8_minimum_bytes": 1,
+      "utf8_maximum_bytes": 2048
+    },
+    "LeaseToken": {
+      "kind": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "decoded_bytes": 32,
+      "secret": true
+    },
+    "Base64": {
+      "kind": "string",
+      "format": "canonical padded RFC 4648 base64; strict decode/re-encode comparison",
+      "utf8_maximum_bytes": 43692
+    },
+    "Mode": {
+      "kind": "enum",
+      "values": [
+        "simple",
+        "full",
+        "interactive"
+      ]
+    },
+    "Direction": {
+      "kind": "enum",
+      "values": [
+        "to_discourse",
+        "from_discourse"
+      ]
+    },
+    "PublicationKind": {
+      "kind": "enum",
+      "values": [
+        "dynamic",
+        "static"
+      ]
+    },
+    "WorkAction": {
+      "kind": "enum",
+      "values": [
+        "publish_revision",
+        "withdraw"
+      ]
+    },
+    "WorkState": {
+      "kind": "enum",
+      "values": [
+        "pending",
+        "leased",
+        "synchronized",
+        "deployed",
+        "verified",
+        "retry_wait",
+        "attention",
+        "cancelled",
+        "superseded"
+      ]
+    },
+    "MappingState": {
+      "kind": "enum",
+      "values": [
+        "pending",
+        "active",
+        "attention",
+        "withdrawn"
+      ]
+    },
+    "RevocationReason": {
+      "kind": "enum",
+      "values": [
+        "source_unpublished",
+        "source_deleted",
+        "source_ineligible",
+        "policy_excluded"
+      ]
+    },
+    "CatalogKind": {
+      "kind": "enum",
+      "values": [
+        "authors",
+        "taxonomy"
+      ]
+    },
+    "SourceAuthor": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "name": {
+          "type": "Label",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "Source": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "source_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "topic_id": {
+          "type": "CoreId",
+          "required": true
+        },
+        "topic_url": {
+          "type": "Url",
+          "required": true
+        },
+        "title": {
+          "type": "Title",
+          "required": true
+        },
+        "content_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "content_bytes": {
+          "type": "UInt",
+          "required": true
+        },
+        "source_created_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "source_updated_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "source_authors": {
+          "type": "SourceAuthors",
+          "required": true
+        }
+      },
+      "rules": [
+        "If both source times are known, updated_at >= created_at. Revision fixes every value in this object and its complete content."
+      ]
+    },
+    "SourceAuthors": {
+      "kind": "array",
+      "items": "SourceAuthor",
+      "maximum_items": 20,
+      "rules": [
+        "Author IDs unique; primary_source_author_id, when provided on ToRecord, must name an entry in source_authors."
+      ]
+    },
+    "PublishEvent": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "event_type": {
+          "type": "EventPublish",
+          "required": true
+        },
+        "event_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "event_sequence": {
+          "type": "CoreId",
+          "required": true
+        },
+        "source": {
+          "type": "Source",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "EventPublish": {
+      "kind": "enum",
+      "values": [
+        "publication"
+      ]
+    },
+    "RevokeEvent": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "event_type": {
+          "type": "EventRevoke",
+          "required": true
+        },
+        "event_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "event_sequence": {
+          "type": "CoreId",
+          "required": true
+        },
+        "source_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "last_source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "reason": {
+          "type": "RevocationReason",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "EventRevoke": {
+      "kind": "enum",
+      "values": [
+        "revocation"
+      ]
+    },
+    "SourceEvent": {
+      "kind": "tagged_union",
+      "field": "event_type",
+      "variants": {
+        "publication": "PublishEvent",
+        "revocation": "RevokeEvent"
+      }
+    },
+    "SourceEvents": {
+      "kind": "array",
+      "items": "SourceEvent",
+      "maximum_items": 100
+    },
+    "SourceFeedQuery": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "stream": {
+          "type": "FeedKind",
+          "required": true
+        },
+        "cursor": {
+          "type": "Cursor",
+          "required": false
+        }
+      },
+      "rules": [
+        "stream is required. Initial: cursor optional. Changes: cursor required. Duplicate/unknown query keys rejected."
+      ]
+    },
+    "FeedKind": {
+      "kind": "enum",
+      "values": [
+        "initial",
+        "changes"
+      ]
+    },
+    "SourceFeed": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "stream": {
+          "type": "FeedKind",
+          "required": true
+        },
+        "items": {
+          "type": "SourceEvents",
+          "required": true
+        },
+        "next_cursor": {
+          "type": "Cursor",
+          "required": true,
+          "nullable": true
+        },
+        "checkpoint_cursor": {
+          "type": "Cursor",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": [
+        "Initial nonfinal: next_cursor nonnull, checkpoint null. Initial final: next null, checkpoint nonnull. Changes: checkpoint always nonnull; next nonnull only while draining the fixed current poll high-water mark."
+      ]
+    },
+    "ContentQuery": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "offset": {
+          "type": "UInt",
+          "required": false,
+          "default": 0
+        }
+      },
+      "rules": []
+    },
+    "ContentChunk": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "source_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "content_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "content_bytes": {
+          "type": "UInt",
+          "required": true
+        },
+        "offset": {
+          "type": "UInt",
+          "required": true
+        },
+        "next_offset": {
+          "type": "UInt",
+          "required": true,
+          "nullable": true
+        },
+        "content_base64": {
+          "type": "Base64",
+          "required": true
+        }
+      },
+      "rules": [
+        "Decoded content length <=32768. Offset + decoded length <= content_bytes. Nonfinal next_offset equals offset + decoded length and is strictly larger than offset. Final next_offset=null and offset+decoded length=content_bytes. Repeated request returns identical bytes for the same revision/offset."
+      ]
+    },
+    "IdList": {
+      "kind": "array",
+      "items": "OpaqueId",
+      "maximum_items": 1000,
+      "unique_items": true
+    },
+    "CoreIdList": {
+      "kind": "array",
+      "items": "CoreId",
+      "maximum_items": 1000,
+      "unique_items": true
+    },
+    "Modes": {
+      "kind": "array",
+      "items": "Mode",
+      "maximum_items": 3,
+      "unique_items": true,
+      "minimum_items": 1
+    },
+    "Policy": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "policy_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "enabled": {
+          "type": "Boolean",
+          "required": true
+        },
+        "selection": {
+          "type": "SourceSelection",
+          "required": true
+        },
+        "category_ids": {
+          "type": "CoreIdList",
+          "required": true
+        },
+        "include_topic_ids": {
+          "type": "CoreIdList",
+          "required": true
+        },
+        "exclude_topic_ids": {
+          "type": "CoreIdList",
+          "required": true
+        },
+        "include_unlisted": {
+          "type": "Boolean",
+          "required": true
+        },
+        "publication_kind": {
+          "type": "PublicationKind",
+          "required": true
+        },
+        "presentation_mode": {
+          "type": "Mode",
+          "required": true
+        },
+        "author_ids": {
+          "type": "IdList",
+          "required": true
+        },
+        "taxonomy_ids": {
+          "type": "IdList",
+          "required": true
+        },
+        "existing_record_adoption": {
+          "type": "AdoptionMode",
+          "required": true
+        },
+        "adoptable_resource_ids": {
+          "type": "UUIDList",
+          "required": true
+        }
+      },
+      "rules": [
+        "Selection categories: category_ids nonempty; all_public: category_ids empty. Include/exclude lists unique and disjoint. Exclusion wins over category selection; include is not authority to publish private/deleted/draft content. Actual native author/taxonomy selections must be available in active catalogs. Only authorized Discourse administrators may write this policy; adapter route is read-only.",
+        "adoptable_resource_ids must be empty when existing_record_adoption=disabled; explicit_records_only admits exactly these current connection-owned From-Discourse resources, not arbitrary Core topics."
+      ]
+    },
+    "SourceSelection": {
+      "kind": "enum",
+      "values": [
+        "categories",
+        "all_public"
+      ]
+    },
+    "AdoptionMode": {
+      "kind": "enum",
+      "values": [
+        "disabled",
+        "explicit_records_only"
+      ]
+    },
+    "Connection": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "connection_id": {
+          "type": "ConnectionId",
+          "required": true
+        },
+        "profile": {
+          "type": "CmsProfile",
+          "required": true
+        },
+        "destination_origin": {
+          "type": "Url",
+          "required": true
+        },
+        "scope_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "forum_name": {
+          "type": "Label",
+          "required": true
+        },
+        "directions": {
+          "type": "Directions",
+          "required": true
+        },
+        "policy": {
+          "type": "Policy",
+          "required": true
+        },
+        "publication_lane": {
+          "type": "Lane",
+          "required": true
+        },
+        "native_capabilities": {
+          "type": "NativeCapabilities",
+          "required": true
+        }
+      },
+      "rules": [
+        "publication_lane is administrator-configured within this connection's allowed lanes. v2 source/mapping/work routes use that lane, without new caller authority. destination_origin is an origin, not a path or query URL.",
+        "Profile discourse uses NetworkConnection and network routes, not this CMS Connection object."
+      ]
+    },
+    "Directions": {
+      "kind": "array",
+      "items": "Direction",
+      "maximum_items": 2,
+      "minimum_items": 1,
+      "unique_items": true
+    },
+    "Mapping": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mapping_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "resource_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "connection_id": {
+          "type": "ConnectionId",
+          "required": true
+        },
+        "source_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "mapping_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "destination_native_id": {
+          "type": "OpaqueId",
+          "required": true,
+          "nullable": true
+        },
+        "canonical_url": {
+          "type": "Url",
+          "required": true
+        },
+        "retired_url_count": {
+          "type": "UInt",
+          "required": true
+        },
+        "mapping_state": {
+          "type": "MappingState",
+          "required": true
+        },
+        "presentation_mode": {
+          "type": "Mode",
+          "required": true
+        },
+        "desired_source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "synchronized_source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "publicly_verified_source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "destination_native_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "source_created_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "source_updated_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "synchronized_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "publicly_verified_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": []
+    },
+    "MappingList": {
+      "kind": "array",
+      "items": "Mapping",
+      "maximum_items": 100
+    },
+    "MappingPage": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "items": {
+          "type": "MappingList",
+          "required": true
+        },
+        "next_cursor": {
+          "type": "Cursor",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": []
+    },
+    "CursorQuery": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "cursor": {
+          "type": "Cursor",
+          "required": false
+        }
+      },
+      "rules": []
+    },
+    "MappingPrepare": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "source_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "policy_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "canonical_url": {
+          "type": "Url",
+          "required": true
+        }
+      },
+      "rules": [
+        "Reserves identity/URL only for an already eligible receiver-created publication intent. It does not enable policy or create publication work by caller request. Exact existing mapping returns that mapping; a mismatched external_id/URL is a conflict."
+      ]
+    },
+    "Ownership": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "resource_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "native_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "canonical_url": {
+          "type": "Url",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "ownership_receipt_sha256": {
+          "type": "Sha256",
+          "required": true
+        }
+      },
+      "rules": [
+        "Hash describes only the native ownership receipt, excluding credentials. Receiver checks binding fields against authoritative stored records. Native adapter must actually validate the receipt under native lock; receiving this object alone is not independent proof of the native filesystem/database.",
+        "Local NativeOwnershipReceipt must bind current work generation; when proving a URL move it includes that move_id and public proof_nonce. Receiving a hash does not substitute for native receipt inspection."
+      ]
+    },
+    "MappingAdopt": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "resource_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "source_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "expected_topic_id": {
+          "type": "CoreId",
+          "required": true
+        },
+        "ownership": {
+          "type": "Ownership",
+          "required": true
+        }
+      },
+      "rules": [
+        "Policy must explicitly admit this exact baseline resource for adoption. Receiver must match existing connection-owned from_discourse resource/topic/active external_id and URL before joining additive mapping state. Do not change existing record meaning."
+      ]
+    },
+    "LeaseAuthority": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "work_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "lease_token": {
+          "type": "LeaseToken",
+          "required": true
+        },
+        "lease_generation": {
+          "type": "PositiveUInt",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "policy_revision": {
+          "type": "Revision",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "Representation": {
+      "kind": "tagged_union",
+      "field": "kind",
+      "variants": {
+        "full": "FullRepresentation",
+        "native_excerpt": "ExcerptRepresentation"
+      }
+    },
+    "FullKind": {
+      "kind": "enum",
+      "values": [
+        "full"
+      ]
+    },
+    "ExcerptKind": {
+      "kind": "enum",
+      "values": [
+        "native_excerpt"
+      ]
+    },
+    "FullRepresentation": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "FullKind",
+          "required": true
+        },
+        "source_content_sha256": {
+          "type": "Sha256",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "ExcerptRepresentation": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "ExcerptKind",
+          "required": true
+        },
+        "source_content_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "native_limit_bytes": {
+          "type": "PositiveUInt",
+          "required": true
+        },
+        "native_constraint_code": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "read_more_url": {
+          "type": "Url",
+          "required": true
+        }
+      },
+      "rules": [
+        "Only a real native destination limit permits an excerpt. Read More URL equals authoritative source topic URL. No transport/body-page bound is a native publication limit."
+      ]
+    },
+    "Work": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "work_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "mapping_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "source_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "policy_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "action": {
+          "type": "WorkAction",
+          "required": true
+        },
+        "state": {
+          "type": "WorkState",
+          "required": true
+        },
+        "attempt_cycle": {
+          "type": "UUID",
+          "required": true
+        },
+        "attempt": {
+          "type": "UInt",
+          "required": true
+        },
+        "lease_generation": {
+          "type": "UInt",
+          "required": true
+        },
+        "retry_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "last_failure_code": {
+          "type": "ErrorCode",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": [
+        "source_revision nonnull for publish_revision and null for withdraw; attempt 0..3; terminal work cannot be reset for a new revision. Any lease generation exceeds all previous native generations for this mapping.",
+        "lease_generation is allocated from one durable monotonically increasing mapping fence counter. New work or explicit retry cycles never reset that counter; new claim advances it."
+      ]
+    },
+    "Lease": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "work": {
+          "type": "Work",
+          "required": true
+        },
+        "lease_token": {
+          "type": "LeaseToken",
+          "required": true
+        },
+        "lease_generation": {
+          "type": "PositiveUInt",
+          "required": true
+        },
+        "expires_at": {
+          "type": "Instant",
+          "required": true
+        },
+        "server_time": {
+          "type": "Instant",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "Claim": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "mapping_id": {
+          "type": "UUID",
+          "required": false
+        }
+      },
+      "rules": [
+        "mapping_id, if supplied, filters already existing authorized pending work; it cannot create work."
+      ]
+    },
+    "Renew": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "WorkQueryResponse": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "work": {
+          "type": "Work",
+          "required": true
+        },
+        "mapping": {
+          "type": "Mapping",
+          "required": true
+        },
+        "lease_expires_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": []
+    },
+    "SyncAck": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "stage": {
+          "type": "SyncStage",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "native_result": {
+          "type": "SyncResult",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "SyncStage": {
+      "kind": "enum",
+      "values": [
+        "synchronized"
+      ]
+    },
+    "DeployAck": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "stage": {
+          "type": "DeployStage",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "deployment_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "deployed_at": {
+          "type": "Instant",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "DeployStage": {
+      "kind": "enum",
+      "values": [
+        "deployed"
+      ]
+    },
+    "VerifyAck": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "stage": {
+          "type": "VerifyStage",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "verification": {
+          "type": "Verification",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "VerifyStage": {
+      "kind": "enum",
+      "values": [
+        "verified"
+      ]
+    },
+    "Ack": {
+      "kind": "tagged_union",
+      "field": "stage",
+      "variants": {
+        "synchronized": "SyncAck",
+        "deployed": "DeployAck",
+        "verified": "VerifyAck"
+      }
+    },
+    "PublishedVerification": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "PublishedKind",
+          "required": true
+        },
+        "url": {
+          "type": "Url",
+          "required": true
+        },
+        "native_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "source_content_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "native_publication_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "verification_profile": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "checked_at": {
+          "type": "Instant",
+          "required": true
+        },
+        "representation": {
+          "type": "Representation",
+          "required": true
+        }
+      },
+      "rules": [
+        "Verifier fetched actual canonical public URL on the configured native origin without credentials or redirects and compared the expected source/native identity and native rendered representation. Hash is the declared verifier profile's native publication fragment, not a copied source marker."
+      ]
+    },
+    "PublishedKind": {
+      "kind": "enum",
+      "values": [
+        "published"
+      ]
+    },
+    "AbsentVerification": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "AbsentKind",
+          "required": true
+        },
+        "url": {
+          "type": "Url",
+          "required": true
+        },
+        "native_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "checked_at": {
+          "type": "Instant",
+          "required": true
+        },
+        "http_status": {
+          "type": "AbsenceStatus",
+          "required": true
+        }
+      },
+      "rules": [
+        "Only withdraw work accepts this branch. URL equals current owned mapping URL. Native owned object is unpublished and HTTP response is 404 or 410; 401/403, network failure, or an unrelated URL do not prove withdrawal."
+      ]
+    },
+    "AbsentKind": {
+      "kind": "enum",
+      "values": [
+        "absent"
+      ]
+    },
+    "AbsenceStatus": {
+      "kind": "enum",
+      "values": [
+        404,
+        410
+      ]
+    },
+    "Verification": {
+      "kind": "tagged_union",
+      "field": "kind",
+      "variants": {
+        "published": "PublishedVerification",
+        "absent": "AbsentVerification"
+      }
+    },
+    "Failure": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "code": {
+          "type": "ErrorCode",
+          "required": true
+        },
+        "native_change_applied": {
+          "type": "Boolean",
+          "required": true
+        },
+        "safe_detail": {
+          "type": "Label",
+          "required": true,
+          "nullable": true
+        },
+        "retry_after_seconds": {
+          "type": "UInt",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": [
+        "Transient classification is receiver-derived from the code. Caller cannot make a permanent conflict transient."
+      ]
+    },
+    "StaticPreparation": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "transaction_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "native_result": {
+          "type": "SyncResult",
+          "required": true
+        },
+        "prepared_at": {
+          "type": "Instant",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "StaticFinalize": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "transaction_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "deployment_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "deployed_at": {
+          "type": "Instant",
+          "required": true
+        },
+        "verification": {
+          "type": "Verification",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "StaticAbort": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "transaction_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "native_restored": {
+          "type": "Boolean",
+          "required": true
+        },
+        "safe_detail": {
+          "type": "Label",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": [
+        "An abort is not a successful publication. A false or unverifiable restoration leaves attention; successful restoration preserves previous native/public revision and exact identity."
+      ]
+    },
+    "UrlMovePrepare": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "expected_mapping_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "old_url": {
+          "type": "Url",
+          "required": true
+        },
+        "new_url": {
+          "type": "Url",
+          "required": true
+        },
+        "ownership": {
+          "type": "Ownership",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "UrlMove": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "move_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "mapping_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "expected_mapping_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "old_url": {
+          "type": "Url",
+          "required": true
+        },
+        "new_url": {
+          "type": "Url",
+          "required": true
+        },
+        "proof_nonce": {
+          "type": "PublicNonce",
+          "required": true
+        },
+        "state": {
+          "type": "UrlMoveState",
+          "required": true
+        },
+        "prepared_at": {
+          "type": "Instant",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "PublicNonce": {
+      "kind": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "decoded_bytes": 32,
+      "secret": false
+    },
+    "UrlMoveState": {
+      "kind": "enum",
+      "values": [
+        "prepared",
+        "committed",
+        "aborted",
+        "attention"
+      ]
+    },
+    "UrlMoveFinalize": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "move_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "proof_nonce": {
+          "type": "PublicNonce",
+          "required": true
+        },
+        "ownership": {
+          "type": "Ownership",
+          "required": true
+        },
+        "verification": {
+          "type": "PublishedVerification",
+          "required": true
+        }
+      },
+      "rules": [
+        "Ownership canonical_url and PublishedVerification.url equal proposed new URL; native ID/source revision/content hash match the current authoritative mapping/work. Native receipt/proof profile binds stored move_id and nonce."
+      ]
+    },
+    "UrlMoveAbort": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "authority": {
+          "type": "LeaseAuthority",
+          "required": true
+        },
+        "move_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "native_change_applied": {
+          "type": "Boolean",
+          "required": true
+        },
+        "ownership": {
+          "type": "Ownership",
+          "required": true
+        }
+      },
+      "rules": [
+        "Abort releases new URL only if no native change was applied and ownership still proves old URL. Otherwise attention/reconciliation; do not free a URL potentially carrying this publication."
+      ]
+    },
+    "UrlHistoryEntry": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "url": {
+          "type": "Url",
+          "required": true
+        },
+        "retired_at": {
+          "type": "Instant",
+          "required": true
+        },
+        "move_id": {
+          "type": "UUID",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "UrlHistoryItems": {
+      "kind": "array",
+      "items": "UrlHistoryEntry",
+      "maximum_items": 100
+    },
+    "UrlHistoryPage": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "items": {
+          "type": "UrlHistoryItems",
+          "required": true
+        },
+        "next_cursor": {
+          "type": "Cursor",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": []
+    },
+    "CatalogEntry": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "label": {
+          "type": "Label",
+          "required": true
+        },
+        "available": {
+          "type": "Boolean",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "CatalogEntries": {
+      "kind": "array",
+      "items": "CatalogEntry",
+      "maximum_items": 100
+    },
+    "CatalogBegin": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "kind": {
+          "type": "CatalogKind",
+          "required": true
+        },
+        "native_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "total_items": {
+          "type": "UInt",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "CatalogUpload": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "upload_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "kind": {
+          "type": "CatalogKind",
+          "required": true
+        },
+        "native_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "total_items": {
+          "type": "UInt",
+          "required": true
+        },
+        "received_items": {
+          "type": "UInt",
+          "required": true
+        },
+        "next_page": {
+          "type": "UInt",
+          "required": true
+        },
+        "expires_at": {
+          "type": "Instant",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "CatalogPageInput": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "page": {
+          "type": "UInt",
+          "required": true
+        },
+        "items": {
+          "type": "CatalogEntries",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "CatalogFinalize": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "upload_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "expected_total_items": {
+          "type": "UInt",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "CatalogResponse": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "CatalogKind",
+          "required": true
+        },
+        "catalog_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "native_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "total_items": {
+          "type": "UInt",
+          "required": true
+        },
+        "items": {
+          "type": "CatalogEntries",
+          "required": true
+        },
+        "next_cursor": {
+          "type": "Cursor",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": []
+    },
+    "CatalogReadQuery": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "CatalogKind",
+          "required": true
+        },
+        "cursor": {
+          "type": "Cursor",
+          "required": false
+        }
+      },
+      "rules": []
+    },
+    "ToResolve": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "bridge_record": {
+          "type": "ToRecord",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "ToRecord": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "direction": {
+          "type": "ToDirection",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "canonical_url": {
+          "type": "Url",
+          "required": true
+        },
+        "title": {
+          "type": "Title",
+          "required": true
+        },
+        "content_html": {
+          "type": "ContentHtml",
+          "required": true
+        },
+        "published": {
+          "type": "True",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "expected_source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "source_created_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "source_updated_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "representation": {
+          "type": "ToRepresentation",
+          "required": true
+        },
+        "lane": {
+          "type": "Lane",
+          "required": false
+        },
+        "adapter_id": {
+          "type": "AdapterLabel",
+          "required": false
+        },
+        "adapter_version": {
+          "type": "AdapterLabel",
+          "required": false
+        },
+        "correlation_id": {
+          "type": "CorrelationId",
+          "required": false
+        },
+        "visibility": {
+          "type": "Unlisted",
+          "required": false,
+          "default": "unlisted"
+        },
+        "source_authors": {
+          "type": "SourceAuthors",
+          "required": false
+        },
+        "primary_source_author_id": {
+          "type": "OpaqueId",
+          "required": false
+        },
+        "existing_topic_id": {
+          "type": "CoreId",
+          "required": false
+        },
+        "source_content_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "source_content_bytes": {
+          "type": "UInt",
+          "required": true
+        }
+      },
+      "rules": [
+        "Existing field bounds preserve v1 values; v2 existing_topic_id uses decimal CoreId string explicitly. Same source_revision with a changed payload conflicts. A new revision requires expected_source_revision matching the stored last source revision; initial creation requires null. Published native edits may invoke this route; draft/autosave/revision-object/page-view activity may not. Source-owned title/imported content updates stop at local/moderator ownership conflict rather than overwrite local discussion.",
+        "source_content_sha256/source_content_bytes describe the complete sanitized native source before excerpt selection. Full representation must match content_html bytes/hash exactly; bounded_excerpt requires source_content_bytes>49152 and must fit the existing HTML bound including Read More."
+      ]
+    },
+    "ToDirection": {
+      "kind": "enum",
+      "values": [
+        "to_discourse"
+      ]
+    },
+    "True": {
+      "kind": "enum",
+      "values": [
+        true
+      ]
+    },
+    "ContentHtml": {
+      "kind": "string",
+      "utf8_minimum_bytes": 1,
+      "utf8_maximum_bytes": 49152,
+      "sanitized_nonblank_html": true
+    },
+    "Lane": {
+      "kind": "string",
+      "utf8_maximum_bytes": 64
+    },
+    "AdapterLabel": {
+      "kind": "string",
+      "utf8_maximum_bytes": 100
+    },
+    "CorrelationId": {
+      "kind": "string",
+      "utf8_maximum_bytes": 200
+    },
+    "Unlisted": {
+      "kind": "enum",
+      "values": [
+        "unlisted"
+      ]
+    },
+    "ToFull": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "FullKind",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "ToExcerpt": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "ToBoundedExcerptKind",
+          "required": true
+        },
+        "read_more_url": {
+          "type": "Url",
+          "required": true
+        }
+      },
+      "rules": [
+        "Read More URL equals canonical_url. Native source exceeds 49152-byte HTML delivery bound; serialized sanitized excerpt including link remains <=49152 bytes."
+      ]
+    },
+    "ToRepresentation": {
+      "kind": "tagged_union",
+      "field": "kind",
+      "variants": {
+        "full": "ToFull",
+        "bounded_excerpt": "ToExcerpt"
+      }
+    },
+    "ResolveOutcome": {
+      "kind": "enum",
+      "values": [
+        "created",
+        "resolved",
+        "updated",
+        "reconciliation_required"
+      ]
+    },
+    "ResolveResult": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "outcome": {
+          "type": "ResolveOutcome",
+          "required": true
+        },
+        "reason": {
+          "type": "ResolveReason",
+          "required": true
+        },
+        "resource_id": {
+          "type": "UUID",
+          "required": true,
+          "nullable": true
+        },
+        "topic_id": {
+          "type": "CoreId",
+          "required": true,
+          "nullable": true
+        },
+        "topic_url": {
+          "type": "Url",
+          "required": true,
+          "nullable": true
+        },
+        "direction": {
+          "type": "ToDirection",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "synchronized_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "core_fallback": {
+          "type": "False",
+          "required": true
+        }
+      },
+      "rules": [
+        "created/resolved/updated require all resource/topic/revision/time fields nonnull. reconciliation_required uses one of the four conflict/adoption reasons and all resource/topic/revision/time fields null; no other connection identity disclosed."
+      ]
+    },
+    "False": {
+      "kind": "enum",
+      "values": [
+        false
+      ]
+    },
+    "Record": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "resource_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "direction": {
+          "type": "Direction",
+          "required": true
+        },
+        "state": {
+          "type": "RecordState",
+          "required": true
+        },
+        "topic_id": {
+          "type": "CoreId",
+          "required": true
+        },
+        "topic_url": {
+          "type": "Url",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "canonical_url": {
+          "type": "Url",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "source_created_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "source_updated_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "synchronized_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        },
+        "mapping_id": {
+          "type": "UUID",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": [
+        "Metadata-only successor view; preserved v1 detail remains unchanged. From-Discourse content uses source revision routes."
+      ]
+    },
+    "Records": {
+      "kind": "array",
+      "items": "Record",
+      "maximum_items": 100
+    },
+    "RecordPage": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "items": {
+          "type": "Records",
+          "required": true
+        },
+        "next_cursor": {
+          "type": "Cursor",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": []
+    },
+    "WithdrawInput": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "expected_source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "reason": {
+          "type": "RevocationReason",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "Error": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "outcome": {
+          "type": "Rejected",
+          "required": true
+        },
+        "code": {
+          "type": "ErrorCode",
+          "required": true
+        },
+        "retryable": {
+          "type": "Boolean",
+          "required": true
+        },
+        "retry_after_seconds": {
+          "type": "UInt",
+          "required": true,
+          "nullable": true
+        },
+        "correlation_id": {
+          "type": "CorrelationId",
+          "required": true,
+          "nullable": true
+        },
+        "core_fallback": {
+          "type": "False",
+          "required": true
+        }
+      },
+      "rules": [
+        "retryable and HTTP status are fixed by error code; retry_after_seconds null for permanent errors and otherwise null or 1..3600."
+      ]
+    },
+    "Rejected": {
+      "kind": "enum",
+      "values": [
+        "rejected"
+      ]
+    },
+    "ErrorCode": {
+      "kind": "enum",
+      "values": [
+        "invalid_json",
+        "unknown_field",
+        "invalid_field",
+        "body_too_large",
+        "unsupported_media_type",
+        "authentication_required",
+        "authentication_failed",
+        "connection_disabled",
+        "scope_denied",
+        "resource_not_found",
+        "revision_conflict",
+        "identity_conflict",
+        "native_ownership_conflict",
+        "url_collision",
+        "mapping_conflict",
+        "mutation_conflict",
+        "cursor_invalid",
+        "cursor_scope_changed",
+        "cursor_expired",
+        "revision_unavailable",
+        "content_hash_mismatch",
+        "work_busy",
+        "lease_expired",
+        "lease_conflict",
+        "policy_changed",
+        "work_superseded",
+        "invalid_transition",
+        "presentation_unsupported",
+        "catalog_entry_unavailable",
+        "catalog_upload_expired",
+        "catalog_page_conflict",
+        "metadata_unavailable",
+        "native_limit_exceeded",
+        "public_verification_failed",
+        "native_restore_required",
+        "rate_limited",
+        "transport_timeout",
+        "native_service_unavailable",
+        "storage_exhausted",
+        "source_ineligible",
+        "forum_configuration_invalid",
+        "peer_identity_conflict",
+        "peer_origin_changed",
+        "network_not_enrolled",
+        "recipient_policy_denied",
+        "origin_not_admitted",
+        "relay_not_authorized",
+        "relay_loop",
+        "relay_path_limit",
+        "origin_event_conflict",
+        "native_local_edit_conflict",
+        "source_discussion_unavailable",
+        "discussion_consent_denied",
+        "discussion_authority_expired",
+        "asset_not_admitted",
+        "asset_limit_exceeded",
+        "rich_content_unsupported",
+        "native_visibility_verification_failed"
+      ]
+    },
+    "RecordState": {
+      "kind": "enum",
+      "values": [
+        "pending",
+        "active",
+        "attention",
+        "withdrawn"
+      ]
+    },
+    "NativeWithdrawal": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "WithdrawAction",
+          "required": true
+        },
+        "native_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "canonical_url": {
+          "type": "Url",
+          "required": true
+        },
+        "native_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "ownership_receipt_sha256": {
+          "type": "Sha256",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "WithdrawAction": {
+      "kind": "enum",
+      "values": [
+        "withdraw"
+      ]
+    },
+    "NativePublication": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "kind": {
+          "type": "PublishAction",
+          "required": true
+        },
+        "native_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "canonical_url": {
+          "type": "Url",
+          "required": true
+        },
+        "native_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "ownership_receipt_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "representation": {
+          "type": "Representation",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "PublishAction": {
+      "kind": "enum",
+      "values": [
+        "publish_revision"
+      ]
+    },
+    "SyncResult": {
+      "kind": "tagged_union",
+      "field": "kind",
+      "variants": {
+        "publish_revision": "NativePublication",
+        "withdraw": "NativeWithdrawal"
+      },
+      "rules": [
+        "kind must equal authoritative work.action. Publication and withdrawal preserve the same owned native object identity."
+      ]
+    },
+    "ToBoundedExcerptKind": {
+      "kind": "enum",
+      "values": [
+        "bounded_excerpt"
+      ]
+    },
+    "ResolveReason": {
+      "kind": "enum",
+      "values": [
+        "record_created",
+        "already_resolved",
+        "source_revision_updated",
+        "identity_conflict",
+        "canonical_url_conflict",
+        "native_ownership_conflict",
+        "adoption_unavailable"
+      ]
+    },
+    "SourceUrlMovePrepare": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "expected_source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "old_url": {
+          "type": "Url",
+          "required": true
+        },
+        "new_url": {
+          "type": "Url",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        }
+      },
+      "rules": [
+        "to_discourse only. Exact owned stable external/resource/topic binding; source revision initialized and current; reserve new URL on same permitted native origin. Body/title are not changed by URL migration."
+      ]
+    },
+    "SourceUrlMove": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "move_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "resource_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "expected_source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "old_url": {
+          "type": "Url",
+          "required": true
+        },
+        "new_url": {
+          "type": "Url",
+          "required": true
+        },
+        "proof_nonce": {
+          "type": "PublicNonce",
+          "required": true
+        },
+        "state": {
+          "type": "UrlMoveState",
+          "required": true
+        },
+        "prepared_at": {
+          "type": "Instant",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "SourceUrlVerification": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "url": {
+          "type": "Url",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "source_content_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "native_ownership_receipt_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "native_publication_sha256": {
+          "type": "Sha256",
+          "required": true
+        },
+        "verification_profile": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "checked_at": {
+          "type": "Instant",
+          "required": true
+        }
+      },
+      "rules": []
+    },
+    "SourceUrlMoveFinalize": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "move_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "proof_nonce": {
+          "type": "PublicNonce",
+          "required": true
+        },
+        "expected_source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "verification": {
+          "type": "SourceUrlVerification",
+          "required": true
+        },
+        "new_source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "source_updated_at": {
+          "type": "Instant",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": [
+        "Native adapter proves the same native source identity/content at new URL with issued nonce. new_source_revision is a fresh unused revision different from expected_source_revision, and verification.source_revision must equal it. Atomically update canonical URL/source metadata revision and actual source_updated_at only; retain title/body/content hash/count/native/external/resource/topic identity. Receiver receipt is not independent native proof."
+      ]
+    },
+    "SourceUrlMoveAbort": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "mutation_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "move_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "expected_source_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "native_change_applied": {
+          "type": "Boolean",
+          "required": true
+        },
+        "old_url": {
+          "type": "Url",
+          "required": true
+        },
+        "native_ownership_receipt_sha256": {
+          "type": "Sha256",
+          "required": true
+        }
+      },
+      "rules": [
+        "Release new reservation only when no native move was applied and old URL ownership remains proven. Otherwise attention; retain both reservations until exact recovery."
+      ]
+    },
+    "NativeOwnershipReceipt": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "schema_version": {
+          "type": "OwnershipReceiptVersion",
+          "required": true
+        },
+        "forum_origin": {
+          "type": "Url",
+          "required": true
+        },
+        "connection_id": {
+          "type": "ConnectionId",
+          "required": true
+        },
+        "mapping_id": {
+          "type": "UUID",
+          "required": true,
+          "nullable": true
+        },
+        "resource_id": {
+          "type": "UUID",
+          "required": true
+        },
+        "source_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "external_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "native_id": {
+          "type": "OpaqueId",
+          "required": true
+        },
+        "canonical_url": {
+          "type": "Url",
+          "required": true
+        },
+        "source_revision": {
+          "type": "Revision",
+          "required": true,
+          "nullable": true
+        },
+        "last_lease_generation": {
+          "type": "UInt",
+          "required": true
+        },
+        "move_id": {
+          "type": "UUID",
+          "required": true,
+          "nullable": true
+        },
+        "proof_nonce": {
+          "type": "PublicNonce",
+          "required": true,
+          "nullable": true
+        }
+      },
+      "rules": [
+        "Local durable native receipt, not a POST/GET body. SHA-256 over fixed field-order, 4-byte unsigned big-endian length-prefixed UTF-8 values; null encoded length 0xffffffff; integer encoded canonical decimal text. Never includes connection/lease/operator secrets."
+      ]
+    },
+    "OwnershipReceiptVersion": {
+      "kind": "enum",
+      "values": [
+        "db-native-ownership-1"
+      ]
+    },
+    "UUIDList": {
+      "kind": "array",
+      "items": "UUID",
+      "maximum_items": 1000,
+      "unique_items": true
+    },
+    "NativeCapabilities": {
+      "kind": "object",
+      "unknown_fields": "reject",
+      "fields": {
+        "native_revision": {
+          "type": "Revision",
+          "required": true
+        },
+        "supported_presentations": {
+          "type": "Modes",
+          "required": true
+        },
+        "publication_kind": {
+          "type": "PublicationKind",
+          "required": true
+        },
+        "complete_content_supported": {
+          "type": "Boolean",
+          "required": true
+        }
+      },
+      "rules": [
+        "Administrator selects only verified native capabilities. Caller capability claims remain descriptive and cannot grant scope or create work. An unavailable selected mode/native configuration stops publication rather than downgrade."
+      ]
+    },
+    "CmsProfile": {
+      "kind": "enum",
+      "values": [
+        "astro",
+        "ghost",
+        "hugo",
+        "statamic_flat",
+        "statamic_db",
+        "statamic_ssg",
+        "wordpress"
+      ]
+    }
+  },
+  "routes": [
+    {
+      "id": "V2-01",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/connection.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": null,
+      "response": "Connection",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Current enabled/scoped stored connection only. No secret is emitted.",
+        "native_capabilities are stored descriptive native configuration, never authentication. Set via authorized administration and verified in component qualification."
+      ]
+    },
+    {
+      "id": "V2-02",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/bridge-records/resolve.json",
+      "authorization": "content_connection",
+      "input": "ToResolve",
+      "query": null,
+      "response": "ResolveResult",
+      "success_http": [
+        200,
+        201
+      ],
+      "rules": [
+        "to_discourse direction required. created=201, resolved/updated=200, reconciliation_required=409. Returned topic identity uses decimal string; v1 stays integer."
+      ]
+    },
+    {
+      "id": "V2-03",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/bridge-records.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": "CursorQuery",
+      "response": "RecordPage",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Records scoped to connection/origin/direction/lane."
+      ]
+    },
+    {
+      "id": "V2-04",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/bridge-records/{resource_id}.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": null,
+      "response": "Record",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "resource_id UUID; unauthorized resources return resource_not_found, without disclosing another connection."
+      ]
+    },
+    {
+      "id": "V2-05",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/bridge-records/{resource_id}/withdraw.json",
+      "authorization": "content_connection",
+      "input": "WithdrawInput",
+      "query": null,
+      "response": "Record",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "to_discourse direction only; exact owned binding marked withdrawn and future source delivery stopped. Does not delete/hide the forum topic or its discussion. Public privacy/deletion is forum-owned and is not promised by binding withdrawal."
+      ]
+    },
+    {
+      "id": "V2-06",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/sources.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": "SourceFeedQuery",
+      "response": "SourceFeed",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "from_discourse direction and current source policy required."
+      ]
+    },
+    {
+      "id": "V2-07",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/sources/{source_id}/revisions/{source_revision}/content.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": "ContentQuery",
+      "response": "ContentChunk",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Path IDs UTF-8 percent encoded exactly once. Offset<=content_bytes; offset at end returns empty final chunk."
+      ]
+    },
+    {
+      "id": "V2-08",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/policy.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": null,
+      "response": "Policy",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Read-only to adapter. Discourse administrator UI owns changes."
+      ]
+    },
+    {
+      "id": "V2-09",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/mappings/prepare.json",
+      "authorization": "content_connection",
+      "input": "MappingPrepare",
+      "query": null,
+      "response": "Mapping",
+      "success_http": [
+        200,
+        201
+      ],
+      "rules": [
+        "from_discourse only; unique key (connection_id,source_id); no caller-enabled policy or unilateral work."
+      ]
+    },
+    {
+      "id": "V2-10",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/mappings/adopt.json",
+      "authorization": "content_connection",
+      "input": "MappingAdopt",
+      "query": null,
+      "response": "Mapping",
+      "success_http": [
+        200,
+        201
+      ],
+      "rules": [
+        "Explicit existing-resource allowlist controlled by forum admin; no baseline record conversion."
+      ]
+    },
+    {
+      "id": "V2-11",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/mappings.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": "CursorQuery",
+      "response": "MappingPage",
+      "success_http": [
+        200
+      ],
+      "rules": []
+    },
+    {
+      "id": "V2-12",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/mappings/{mapping_id}.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": null,
+      "response": "Mapping",
+      "success_http": [
+        200
+      ],
+      "rules": []
+    },
+    {
+      "id": "V2-13",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/mappings/{mapping_id}/url-history.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": "CursorQuery",
+      "response": "UrlHistoryPage",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "At most 100 entries; private to owning enabled/scoped connection."
+      ]
+    },
+    {
+      "id": "V2-14",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/work/claim.json",
+      "authorization": "content_connection",
+      "input": "Claim",
+      "query": null,
+      "response": "Lease",
+      "success_http": [
+        200,
+        204
+      ],
+      "rules": [
+        "204 has no body. Claim one already existing work item; attempts increment atomically; no simultaneous live lease for a mapping."
+      ]
+    },
+    {
+      "id": "V2-15",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/work/{work_id}.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": null,
+      "response": "WorkQueryResponse",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "No lease secret in status read."
+      ]
+    },
+    {
+      "id": "V2-16",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/work/{work_id}/renew.json",
+      "authorization": "content_connection",
+      "input": "Renew",
+      "query": null,
+      "response": "Lease",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Authority.work_id must equal path; renewal advances expiry but not lease_generation or attempt."
+      ]
+    },
+    {
+      "id": "V2-17",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/work/{work_id}/acknowledge.json",
+      "authorization": "content_connection",
+      "input": "Ack",
+      "query": null,
+      "response": "WorkQueryResponse",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Authority matches path/current mapping/revision/policy/generation/token. Static work uses prepare/finalize for synchronized/verified; deployed acknowledgement may be recorded separately.",
+        "Dynamic synchronized branch uses action-matching SyncResult; deployed stage applies only to static work; verified stage uses action-matching Verification. A static verified receipt must use finalize."
+      ]
+    },
+    {
+      "id": "V2-18",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/work/{work_id}/fail.json",
+      "authorization": "content_connection",
+      "input": "Failure",
+      "query": null,
+      "response": "WorkQueryResponse",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Permanent errors -> attention. Transient errors -> retry_wait unless attempt ceiling reached."
+      ]
+    },
+    {
+      "id": "V2-19",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/work/{work_id}/prepare.json",
+      "authorization": "content_connection",
+      "input": "StaticPreparation",
+      "query": null,
+      "response": "WorkQueryResponse",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "static profile only. Bind transaction ID to exact work/generation/revision/native state; mark synchronized, never verified.",
+        "Action-matching SyncResult covers staged native publication and staged native withdrawal; must retain prior native/public result for abort."
+      ]
+    },
+    {
+      "id": "V2-20",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/work/{work_id}/finalize.json",
+      "authorization": "content_connection",
+      "input": "StaticFinalize",
+      "query": null,
+      "response": "WorkQueryResponse",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "static publish_revision or withdraw. Exact current prepared transaction, deployment receipt and action-matching public/absence verification required; success verified."
+      ]
+    },
+    {
+      "id": "V2-21",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/work/{work_id}/abort.json",
+      "authorization": "content_connection",
+      "input": "StaticAbort",
+      "query": null,
+      "response": "WorkQueryResponse",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "static only; verified work cannot be aborted. Records failure/attention, never successful publication."
+      ]
+    },
+    {
+      "id": "V2-22",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/mappings/{mapping_id}/url-moves.json",
+      "authorization": "content_connection",
+      "input": "UrlMovePrepare",
+      "query": null,
+      "response": "UrlMove",
+      "success_http": [
+        201,
+        200
+      ],
+      "rules": [
+        "Reserve new URL while old URL remains active. Authority mapping must equal path; native identity cannot change."
+      ]
+    },
+    {
+      "id": "V2-23",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/mappings/{mapping_id}/url-moves/{move_id}/finalize.json",
+      "authorization": "content_connection",
+      "input": "UrlMoveFinalize",
+      "query": null,
+      "response": "Mapping",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Current authorized lease and revision; nonce/ancestry/current native identity and public new-URL verification match. Atomically switch URL and retire/reserve old URL."
+      ]
+    },
+    {
+      "id": "V2-24",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/mappings/{mapping_id}/url-moves/{move_id}/abort.json",
+      "authorization": "content_connection",
+      "input": "UrlMoveAbort",
+      "query": null,
+      "response": "UrlMove",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Only unapplied native move may release new URL. Ambiguous/partial applied native move -> attention, retain reservations."
+      ]
+    },
+    {
+      "id": "V2-25",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/catalog/uploads.json",
+      "authorization": "content_connection",
+      "input": "CatalogBegin",
+      "query": null,
+      "response": "CatalogUpload",
+      "success_http": [
+        201
+      ],
+      "rules": [
+        "Descriptive data only. Does not change policy, scope, or create work."
+      ]
+    },
+    {
+      "id": "V2-26",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/catalog/uploads/{upload_id}/pages.json",
+      "authorization": "content_connection",
+      "input": "CatalogPageInput",
+      "query": null,
+      "response": "CatalogUpload",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Sequential zero-based pages of <=100 entries; duplicate same page accepted only if semantically identical; total body bound applies."
+      ]
+    },
+    {
+      "id": "V2-27",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/catalog/uploads/{upload_id}/finalize.json",
+      "authorization": "content_connection",
+      "input": "CatalogFinalize",
+      "query": null,
+      "response": "CatalogResponse",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Exact declared total and unique entry IDs; atomic active snapshot switch. Old snapshot remains active on any failure. Response gives first bounded page, not entire catalog."
+      ]
+    },
+    {
+      "id": "V2-28",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/catalog.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": "CatalogReadQuery",
+      "response": "CatalogResponse",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Catalog private to owning connection; scoped origin enforced."
+      ]
+    },
+    {
+      "id": "V2-29",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/bridge-records/{resource_id}/source-url-moves.json",
+      "authorization": "content_connection",
+      "input": "SourceUrlMovePrepare",
+      "query": null,
+      "response": "SourceUrlMove",
+      "success_http": [
+        200,
+        201
+      ],
+      "rules": [
+        "Reserve same-origin new source URL for exact current owned to_discourse record. No body/topic rebind."
+      ]
+    },
+    {
+      "id": "V2-30",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/bridge-records/{resource_id}/source-url-moves/{move_id}/finalize.json",
+      "authorization": "content_connection",
+      "input": "SourceUrlMoveFinalize",
+      "query": null,
+      "response": "Record",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "Current source revision and move nonce, exact native ancestry and public new-URL receipt; retire old URL atomically."
+      ]
+    },
+    {
+      "id": "V2-31",
+      "method": "POST",
+      "path": "/discussion-bridge/v2/bridge-records/{resource_id}/source-url-moves/{move_id}/abort.json",
+      "authorization": "content_connection",
+      "input": "SourceUrlMoveAbort",
+      "query": null,
+      "response": "SourceUrlMove",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "No applied native move: abort. Applied/uncertain move: attention; do not free reservations."
+      ]
+    },
+    {
+      "id": "V2-32",
+      "method": "GET",
+      "path": "/discussion-bridge/v2/bridge-records/{resource_id}/url-history.json",
+      "authorization": "content_connection",
+      "input": null,
+      "query": "CursorQuery",
+      "response": "UrlHistoryPage",
+      "success_http": [
+        200
+      ],
+      "rules": [
+        "to_discourse only; scoped URL ancestry, not another connection's URL inventory."
+      ]
+    }
+  ],
+  "transport": {
+    "https": true,
+    "redirects": "reject",
+    "cross_origin": "reject",
+    "request_json_maximum_bytes": 65536,
+    "metadata_response_json_maximum_bytes": 262144,
+    "content_chunk_response_json_maximum_bytes": 65536,
+    "decoded_content_chunk_maximum_bytes": 32768,
+    "strict_utf8": true,
+    "duplicate_object_keys": "reject",
+    "unknown_object_fields": "reject",
+    "unknown_or_duplicate_query_keys": "reject",
+    "number_coercion": "reject",
+    "credentials_in_public_output": "forbidden",
+    "get_bodies": "reject",
+    "mutation_scope": "mutation_id required on every POST and receipts bound to connection+route+path identity",
+    "content_publication_maximum_bytes": null,
+    "byte_bound_note": "Only To-Discourse content_html has the preserved 49152-byte HTML bound; response/body bounds do not impose a whole From-Discourse publication cap",
+    "metadata_response_rule": "Page adaptively below item maximum to respect byte bound. Never omit a required field or truncate a record; single oversized record fails metadata_unavailable."
+  },
+  "bounds": {
+    "feed_items": 100,
+    "mapping_items": 100,
+    "url_history_items": 100,
+    "catalog_page_items": 100,
+    "initial_snapshot_lifetime_seconds": 86400,
+    "cursor_maximum_bytes": 2048,
+    "change_event_retention_seconds": 2592000,
+    "catalog_upload_lifetime_seconds": 86400,
+    "settled_source_revision_retention_seconds": 2592000,
+    "lease_seconds": 300,
+    "automatic_attempts_including_initial": 3,
+    "retry_delays_seconds": [
+      30,
+      120
+    ],
+    "retry_after_maximum_seconds": 3600,
+    "clock_future_tolerance_seconds": 300,
+    "mutation_receipt_retention_seconds": 2592000,
+    "audit_retention_days": 365,
+    "url_history_retention": "retain while binding/mapping exists, including withdrawn mappings; no automatic reuse",
+    "work_history_retention": "retain latest state and unresolved work while mapping exists; retain settled detailed receipts for at least 365 days"
+  },
+  "errors": [
+    {
+      "code": "invalid_json",
+      "http": 400,
+      "retryable": false
+    },
+    {
+      "code": "unknown_field",
+      "http": 400,
+      "retryable": false
+    },
+    {
+      "code": "invalid_field",
+      "http": 422,
+      "retryable": false
+    },
+    {
+      "code": "body_too_large",
+      "http": 413,
+      "retryable": false
+    },
+    {
+      "code": "unsupported_media_type",
+      "http": 415,
+      "retryable": false
+    },
+    {
+      "code": "authentication_required",
+      "http": 401,
+      "retryable": false
+    },
+    {
+      "code": "authentication_failed",
+      "http": 401,
+      "retryable": false
+    },
+    {
+      "code": "connection_disabled",
+      "http": 403,
+      "retryable": false
+    },
+    {
+      "code": "scope_denied",
+      "http": 403,
+      "retryable": false
+    },
+    {
+      "code": "resource_not_found",
+      "http": 404,
+      "retryable": false
+    },
+    {
+      "code": "revision_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "identity_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "native_ownership_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "url_collision",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "mapping_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "mutation_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "cursor_invalid",
+      "http": 400,
+      "retryable": false
+    },
+    {
+      "code": "cursor_scope_changed",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "cursor_expired",
+      "http": 410,
+      "retryable": false
+    },
+    {
+      "code": "revision_unavailable",
+      "http": 410,
+      "retryable": false
+    },
+    {
+      "code": "content_hash_mismatch",
+      "http": 422,
+      "retryable": false
+    },
+    {
+      "code": "work_busy",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "lease_expired",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "lease_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "policy_changed",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "work_superseded",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "invalid_transition",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "presentation_unsupported",
+      "http": 422,
+      "retryable": false
+    },
+    {
+      "code": "catalog_entry_unavailable",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "catalog_upload_expired",
+      "http": 410,
+      "retryable": false
+    },
+    {
+      "code": "catalog_page_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "metadata_unavailable",
+      "http": 422,
+      "retryable": false
+    },
+    {
+      "code": "native_limit_exceeded",
+      "http": 422,
+      "retryable": false
+    },
+    {
+      "code": "public_verification_failed",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "native_restore_required",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "rate_limited",
+      "http": 429,
+      "retryable": true
+    },
+    {
+      "code": "transport_timeout",
+      "http": 504,
+      "retryable": true
+    },
+    {
+      "code": "native_service_unavailable",
+      "http": 503,
+      "retryable": true
+    },
+    {
+      "code": "storage_exhausted",
+      "http": 507,
+      "retryable": false
+    },
+    {
+      "code": "source_ineligible",
+      "http": 403,
+      "retryable": false
+    },
+    {
+      "code": "forum_configuration_invalid",
+      "http": 503,
+      "retryable": false
+    },
+    {
+      "code": "peer_identity_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "peer_origin_changed",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "network_not_enrolled",
+      "http": 403,
+      "retryable": false
+    },
+    {
+      "code": "recipient_policy_denied",
+      "http": 403,
+      "retryable": false
+    },
+    {
+      "code": "origin_not_admitted",
+      "http": 403,
+      "retryable": false
+    },
+    {
+      "code": "relay_not_authorized",
+      "http": 403,
+      "retryable": false
+    },
+    {
+      "code": "relay_loop",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "relay_path_limit",
+      "http": 422,
+      "retryable": false
+    },
+    {
+      "code": "origin_event_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "native_local_edit_conflict",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "source_discussion_unavailable",
+      "http": 503,
+      "retryable": false
+    },
+    {
+      "code": "discussion_consent_denied",
+      "http": 403,
+      "retryable": false
+    },
+    {
+      "code": "discussion_authority_expired",
+      "http": 409,
+      "retryable": false
+    },
+    {
+      "code": "asset_not_admitted",
+      "http": 403,
+      "retryable": false
+    },
+    {
+      "code": "asset_limit_exceeded",
+      "http": 422,
+      "retryable": false
+    },
+    {
+      "code": "rich_content_unsupported",
+      "http": 422,
+      "retryable": false
+    },
+    {
+      "code": "native_visibility_verification_failed",
+      "http": 409,
+      "retryable": false
+    }
+  ],
+  "work_transitions": [
+    {
+      "from": "pending",
+      "event": "claim",
+      "to": "leased"
+    },
+    {
+      "from": "pending",
+      "event": "new_revision_or_policy",
+      "to": "superseded"
+    },
+    {
+      "from": "pending",
+      "event": "scope_or_eligibility_removed",
+      "to": "cancelled"
+    },
+    {
+      "from": "leased",
+      "event": "native_sync_ack",
+      "to": "synchronized"
+    },
+    {
+      "from": "leased",
+      "event": "transient_failure_before_ceiling",
+      "to": "retry_wait"
+    },
+    {
+      "from": "leased",
+      "event": "permanent_failure_or_ceiling",
+      "to": "attention"
+    },
+    {
+      "from": "leased",
+      "event": "expired_before_ceiling",
+      "to": "retry_wait"
+    },
+    {
+      "from": "leased",
+      "event": "expired_at_ceiling",
+      "to": "attention"
+    },
+    {
+      "from": "leased",
+      "event": "new_revision_or_policy",
+      "to": "superseded"
+    },
+    {
+      "from": "leased",
+      "event": "scope_or_eligibility_removed",
+      "to": "cancelled"
+    },
+    {
+      "from": "synchronized",
+      "event": "deploy_ack",
+      "to": "deployed"
+    },
+    {
+      "from": "synchronized",
+      "event": "dynamic_verify_ack",
+      "to": "verified"
+    },
+    {
+      "from": "synchronized",
+      "event": "static_finalize",
+      "to": "verified"
+    },
+    {
+      "from": "synchronized",
+      "event": "transient_failure_or_expiry_before_ceiling",
+      "to": "retry_wait"
+    },
+    {
+      "from": "synchronized",
+      "event": "permanent_failure_or_expiry_at_ceiling",
+      "to": "attention"
+    },
+    {
+      "from": "synchronized",
+      "event": "new_revision_or_policy",
+      "to": "superseded"
+    },
+    {
+      "from": "synchronized",
+      "event": "scope_or_eligibility_removed",
+      "to": "cancelled"
+    },
+    {
+      "from": "deployed",
+      "event": "verify_ack_or_static_finalize",
+      "to": "verified"
+    },
+    {
+      "from": "deployed",
+      "event": "transient_failure_or_expiry_before_ceiling",
+      "to": "retry_wait"
+    },
+    {
+      "from": "deployed",
+      "event": "permanent_failure_or_expiry_at_ceiling",
+      "to": "attention"
+    },
+    {
+      "from": "deployed",
+      "event": "new_revision_or_policy",
+      "to": "superseded"
+    },
+    {
+      "from": "deployed",
+      "event": "scope_or_eligibility_removed",
+      "to": "cancelled"
+    },
+    {
+      "from": "retry_wait",
+      "event": "retry_due",
+      "to": "pending"
+    },
+    {
+      "from": "retry_wait",
+      "event": "new_revision_or_policy",
+      "to": "superseded"
+    },
+    {
+      "from": "retry_wait",
+      "event": "scope_or_eligibility_removed",
+      "to": "cancelled"
+    },
+    {
+      "from": "attention",
+      "event": "explicit_authorized_retry_new_cycle",
+      "to": "pending"
+    },
+    {
+      "from": "attention",
+      "event": "new_revision_or_policy",
+      "to": "superseded"
+    },
+    {
+      "from": "attention",
+      "event": "scope_or_eligibility_removed",
+      "to": "cancelled"
+    },
+    {
+      "from": "synchronized",
+      "event": "static_abort",
+      "to": "attention"
+    },
+    {
+      "from": "deployed",
+      "event": "static_abort",
+      "to": "attention"
+    }
+  ],
+  "limitation": "Exact extracted shapes do not independently prove resource authority, native ownership, live state, or public verification. ErrorCode remains the exact packet enum; CMS service authority does not enable excluded network routes."
+}

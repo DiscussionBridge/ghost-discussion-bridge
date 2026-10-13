@@ -17,6 +17,7 @@ function safeSummary(summary, config = {}) {
     updated: Number.isSafeInteger(summary?.updated) ? summary.updated : 0,
     unchanged: Number.isSafeInteger(summary?.unchanged) ? summary.unchanged : 0,
     skipped: Number.isSafeInteger(summary?.skipped) ? summary.skipped : 0,
+    ...(Number.isSafeInteger(summary?.withdrawn) ? { withdrawn: summary.withdrawn, public_withdrawal_verified: false } : {}),
     failed: Number.isSafeInteger(summary?.failed) ? summary.failed : 0,
     errors: Array.isArray(summary?.errors) ? summary.errors.slice(0, 50).map((error) => ({
       resource_id: typeof error?.resource_id === "string" ? error.resource_id : null,
@@ -25,21 +26,26 @@ function safeSummary(summary, config = {}) {
   };
 }
 
-export async function runPublicationSynchronization(config, store, bridge, ghost, { now = () => new Date() } = {}) {
+export async function runPublicationSynchronization(config, store, bridge, ghost, { now = () => new Date(), leaseMs = RUN_LEASE_MS } = {}) {
   const operationId = randomUUID();
   const startedAt = now().toISOString();
   let claimed = false;
   await store.update(async (state) => {
     const prior = state.publication_sync;
     const priorStarted = Date.parse(prior?.started_at ?? "");
-    if (prior?.state === "running" && Number.isFinite(priorStarted) && Date.now() - priorStarted < RUN_LEASE_MS) return;
-    state.publication_sync = { state: "running", operation_id: operationId, started_at: startedAt };
+    const priorLease = prior?.lease_until ?? priorStarted + RUN_LEASE_MS;
+    if (prior?.state === "running" && Number.isFinite(priorLease) && priorLease > Date.now()) return;
+    state.publication_sync = { state: "running", operation_id: operationId, started_at: startedAt, lease_until: Date.now() + leaseMs };
     claimed = true;
   });
   if (!claimed) throw new Error("Publication synchronization is already running");
-
+  let renewal = Promise.resolve(), leaseError;
+  const heartbeat = setInterval(() => { renewal = renewal.then(async () => { await store.update(async (state) => { if (state.publication_sync?.operation_id !== operationId) throw new Error("Publication synchronization ownership changed"); if (state.publication_sync.state === "running") state.publication_sync.lease_until = Date.now() + leaseMs; }); }).catch((error) => { leaseError ??= error; }); }, Math.max(1, Math.floor(leaseMs / 3)));
+  heartbeat.unref?.();
+  const assertOperation = async () => { if (leaseError) throw leaseError; const current = (await store.read()).publication_sync; if (current?.operation_id !== operationId || current.lease_until <= Date.now()) throw new Error("Publication synchronization ownership changed"); };
   try {
-    const summary = safeSummary(await syncPublications(config, store, bridge, ghost), config);
+    const summary = safeSummary(await syncPublications(config, store, bridge, ghost, { assertOperation }), config);
+    await renewal; await assertOperation();
     const completedAt = now().toISOString();
     await store.update(async (state) => {
       if (state.publication_sync?.operation_id !== operationId) throw new Error("Publication synchronization ownership changed");
@@ -53,7 +59,7 @@ export async function runPublicationSynchronization(config, store, bridge, ghost
       state.publication_sync = { state: "attention", operation_id: operationId, started_at: startedAt, completed_at: completedAt, summary: { created: 0, updated: 0, unchanged: 0, skipped: 0, failed: 1, errors: [{ resource_id: null, reason: safeReason(error?.message, [config.connectionSecret, config.webhookSecret, config.ghostAdminApiKey, config.operatorPassword]) }] } };
     });
     throw error;
-  }
+  } finally { clearInterval(heartbeat); await renewal; }
 }
 
 export { safeReason, safeSummary };
