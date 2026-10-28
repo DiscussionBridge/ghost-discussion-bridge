@@ -1,15 +1,16 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
-import { access, link, mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
+import { access, link, lstat, mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { MAX_STATE_BYTES, readStateFile, serializedState, validState } from "./state-file.mjs";
 
 const LOCK_WAIT_MS = 25;
 const LOCK_TIMEOUT_MS = 120_000;
-const MAX_STATE_BYTES = 16 * 1024 * 1024;
 const TRANSACTION_WORKER = fileURLToPath(new URL("./state-transaction-worker.mjs", import.meta.url));
+const NATIVE_LOCK_WORKER = fileURLToPath(new URL("./native-lock-worker.mjs", import.meta.url));
 
 export async function assertStateStoreRuntimePrerequisites() {
   if (process.platform !== "linux") return;
@@ -39,15 +40,38 @@ export class StateStore {
 
   async read() {
     try {
-      const parsed = JSON.parse(await readFile(this.path, "utf8"));
-      if (!parsed || parsed.version !== 1 || typeof parsed.posts !== "object" || typeof parsed.presentations !== "object") throw new Error();
-      if (parsed.publications === undefined) parsed.publications = {};
-      if (!parsed.publications || typeof parsed.publications !== "object" || Array.isArray(parsed.publications)) throw new Error();
-      return parsed;
+      return await readStateFile(this.path);
     } catch (error) {
       if (error.code === "ENOENT") return { version: 1, posts: {}, presentations: {}, publications: {} };
       throw new Error("Invalid DiscussionBridge state file");
     }
+  }
+
+  // To and From native writers share this mutation lock. State transactions
+  // still commit through update(), including intent BEFORE an external write.
+  async withNativeLock(callback) {
+    const native = new StateStore(`${this.path}.native`, { lockTimeoutMs: this.lockTimeoutMs });
+    await mkdir(dirname(this.path), { recursive: true, mode: 0o750 });
+    for (const path of [this.path, native.lockPath]) {
+      try { if (!(await lstat(path)).isFile()) throw new Error("Unsafe Ghost native state/lock path"); }
+      catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    if (process.platform !== "linux") {
+      const lease = await native.acquirePortableLock();
+      try { return await callback(lease.assert); }
+      finally { await lease.release(); }
+    }
+    const child = spawn("/usr/bin/flock", ["--exclusive", "--no-fork", "--timeout", (this.lockTimeoutMs / 1000).toFixed(3), native.lockPath, process.execPath, NATIVE_LOCK_WORKER], { stdio: ["pipe", "pipe", "pipe"] });
+    let ready = false, lost = false;
+    child.stdin.on("error", () => undefined);
+    const acquired = new Promise((resolve, reject) => {
+      child.stdout.once("data", (bytes) => { if (bytes.toString() === "locked\n") { ready = true; resolve(); } else reject(new Error("Ghost native lock unavailable")); });
+      child.once("error", () => { lost = true; reject(new Error("Ghost native lock unavailable")); });
+      child.once("exit", () => { lost = true; if (!ready) reject(new Error("Ghost native lock unavailable")); });
+    });
+    const assert = async () => { if (!ready || lost || child.exitCode !== null || child.signalCode !== null) throw new Error("Ghost native mutation lock was lost"); };
+    try { await acquired; await assert(); return await callback(assert); }
+    finally { child.stdin.end(); if (!ready) child.kill(); }
   }
 
   async write(state) {
@@ -56,11 +80,12 @@ export class StateStore {
   }
 
   async writeUnlocked(state) {
+    const serialized = serializedState(state);
     await mkdir(dirname(this.path), { recursive: true, mode: 0o750 });
     const temporary = `${this.path}.${process.pid}.tmp`;
     const handle = await open(temporary, "wx", 0o600);
     try {
-      await handle.writeFile(`${JSON.stringify(state, null, 2)}\n`, "utf8");
+      await handle.writeFile(serialized, "utf8");
       await handle.sync();
     } finally { await handle.close(); }
     await rename(temporary, this.path);
@@ -121,7 +146,7 @@ export class StateStore {
             const decoded = Buffer.from(line.slice(6), "base64url").toString("utf8");
             if (Buffer.byteLength(decoded) > MAX_STATE_BYTES) throw new Error();
             stateReceived = true;
-            resolveState(JSON.parse(decoded));
+            resolveState(validState(JSON.parse(decoded)));
           } catch {
             child.kill("SIGKILL");
           }
@@ -148,7 +173,8 @@ export class StateStore {
 
     try {
       const state = await stateReady;
-      const nextState = await callback(state);
+      const nextState = validState(await callback(state));
+      serializedState(nextState);
       const serialized = JSON.stringify(nextState);
       if (Buffer.byteLength(serialized) > MAX_STATE_BYTES) throw new Error("DiscussionBridge state is too large");
       child.stdin.end(`COMMIT ${Buffer.from(serialized).toString("base64url")}\n`);
@@ -185,7 +211,10 @@ export class StateStore {
         try {
           await link(candidate, this.lockPath);
           await unlink(candidate);
-          return { release: () => this.releasePortableLock({ handle, token }) };
+          return { assert: async () => {
+            const [held, current, owner] = await Promise.all([handle.stat(), stat(this.lockPath), readFile(this.lockPath, "utf8").then(JSON.parse)]);
+            if (held.dev !== current.dev || held.ino !== current.ino || owner?.token !== token) throw new Error("Ghost native mutation lock was lost");
+          }, release: () => this.releasePortableLock({ handle, token }) };
         } catch (error) {
           if (error.code !== "EEXIST") throw error;
         }
