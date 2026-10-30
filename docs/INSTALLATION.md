@@ -4,7 +4,7 @@ This is the common external adapter preparation path for a new V4 baseline. Deve
 
 ## Native and host prerequisites
 
-Use Node 22 or newer on a Linux adapter host with executable `/usr/bin/flock` and a dedicated non-root service account. Keep configuration/credentials owner-only outside the runtime and web root, and use a dedicated writable state directory. Ghost remains at its own HTTPS public origin; its Admin origin may be separately configured. The adapter requires its own HTTPS origin. The supplied proxy changes only the adapter host, not Ghost server routing.
+Use Node 22.12 or newer on a Linux adapter host with executable `/usr/bin/flock` and a dedicated non-root service account. This declared minimum matches the existing sanitizer dependency; package tooling does not upgrade an installed runtime. Keep configuration/credentials owner-only outside the runtime and web root, and use a dedicated writable state directory. Ghost remains at its own HTTPS public origin; its Admin origin may be separately configured. The adapter requires its own HTTPS origin. The supplied proxy changes only the adapter host, not Ghost server routing.
 
 Create the protected native Ghost Admin integration key, signed webhook secret and scoped V4 Content Connection credentials through their existing owner interfaces. The receiver must explicitly authorize the Ghost profile, destination origin, directions, current scope, lane and enabled policy. Descriptive capabilities/catalogs do not authorize publication or change policy. Native author/tag selections are exact native IDs; empty selections preserve defaults/current assignments. Source author provenance is separate.
 

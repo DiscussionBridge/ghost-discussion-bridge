@@ -3,12 +3,12 @@
   "build": "npm ci && npm run build:browser",
   "inputs": {
     "npm-shrinkwrap.json": {
-      "bytes": 68379,
-      "sha256": "cb0dfd6f38383d9a9685ebf789f0378fcdb717efeeccda200a4a48b1e92aa4d1"
+      "bytes": 68384,
+      "sha256": "f7fc6d110aa5e9f412c211990c6a4667b854ead3d5e8de06b7ab4aef31028062"
     },
     "package.json": {
-      "bytes": 1375,
-      "sha256": "a04c367a008bb2fd786fb062b3c9ad30b62ef7f4bfef6a3e872857965b500bec"
+      "bytes": 1380,
+      "sha256": "654f4267396630b96bc9d14cf5bedfe660039483f87282a6be2ebf343a36fa1e"
     },
     "scripts/build-browser.mjs": {
       "bytes": 5924,

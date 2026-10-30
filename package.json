@@ -45,5 +45,5 @@
     "playwright-core": "1.62.1"
   },
   "overrides": { "mermaid": { "katex": "$katex", "dompurify": "$dompurify" } },
-  "engines": { "node": ">=22" }
+  "engines": { "node": ">=22.12.0" }
 }

@@ -7,7 +7,7 @@ const root=path.resolve(process.argv[2]),hash=b=>createHash('sha256').update(b).
 const safe=name=>typeof name==='string'&&/^[A-Za-z0-9_./-]+$/.test(name)&&!name.startsWith('/')&&!name.split('/').some(x=>['','.','..'].includes(x));
 function read(name){if(!safe(name))throw Error('Unsafe package member');let current=root;for(const part of name.split('/')){current=path.join(current,part);if(fs.lstatSync(current).isSymbolicLink())throw Error('Linked package member');}if(!fs.lstatSync(current).isFile())throw Error('Non-file package member');return fs.readFileSync(current);}
 function check(name,identity){const b=read(name);if(b.length!==identity.bytes||hash(b)!==identity.sha256)throw Error('Package byte mismatch: '+name);}
-const metadata=JSON.parse(read('package.json'));if(metadata.name!=='ghost-discussion-bridge'||metadata.version!=='0.4.0-alpha.1')throw Error('Unexpected Ghost package');
+const metadata=JSON.parse(read('package.json'));if(metadata.name!=='ghost-discussion-bridge'||metadata.version!=='0.4.0-alpha.1'||metadata.engines?.node!=='>=22.12.0')throw Error('Unexpected Ghost package/runtime minimum');
 const fixed={'cms-runtime.mjs':'acdfddf574910fb7e6cf2e2fe6837b3d266e8d93f1d96cee5e7699122d779076','cms-schema.json':'e6a15a6d70f7bc8b8ee82aa22a0b9c2ff1bbf2da6277f7087118be9e026ce5c0','idna/DEPENDENCIES.json':'2f2a7bce6697e9ed73d2dacd29e244467e3162066d012b7801939032d0847d1e','idna/LICENSES.txt':'21fed045273e053184af7f129c5eccd3d24529b04540c2494c8eb5254d46f331'};
 for(const [name,pin]of Object.entries(fixed))if(hash(read('lib/'+name))!==pin)throw Error('Wrong frozen shared member: '+name);
 const provenance=JSON.parse(read('lib/PROVENANCE.json')),release=JSON.parse(read('discussionbridge-release.json'));
