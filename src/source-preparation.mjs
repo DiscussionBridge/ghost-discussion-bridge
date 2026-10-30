@@ -1,4 +1,4 @@
-import { Parser } from "htmlparser2";
+import { Parser } from "./html-sanitizer.mjs";
 import { anchorCopiedArticleReferences } from "./article-references.mjs";
 
 // A preserving native-copy preparation, not a generic sanitizer/preset or a

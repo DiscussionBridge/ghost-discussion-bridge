@@ -1,5 +1,4 @@
-import sanitizeHtml from "./html-sanitizer.mjs";
-import { decodeHTML } from "entities";
+import sanitizeHtml, { decodeHTML } from "./html-sanitizer.mjs";
 const escape = (value) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 
 // Existing To text-excerpt recipe, with no generated ownership or source

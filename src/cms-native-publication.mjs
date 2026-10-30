@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Parser } from "htmlparser2";
+import { Parser } from "./html-sanitizer.mjs";
 import { ghostOwnedFragment } from "./native-owned-fragment.mjs";
 import { assertNativeContentRepresentable, assertNativeConversionPreserved } from "./native-content-preservation.mjs";
 export { ghostOwnedFragment } from "./native-owned-fragment.mjs";

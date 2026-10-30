@@ -1,4 +1,4 @@
-import { Parser } from "htmlparser2";
+import { Parser } from "./html-sanitizer.mjs";
 import { escapeAttribute } from "entities";
 
 // Mechanical target preservation, NOT a sanitizer or URI/provider policy.

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Parser, parseDocument } from "htmlparser2";
+import { Parser, parseDocument } from "./html-sanitizer.mjs";
 import { parseCmsJson } from "../lib/cms-runtime.mjs";
 import { boundedResponse } from "./bounded-response.mjs";
 import { publishedGhostSource } from "./ghost-source.mjs";

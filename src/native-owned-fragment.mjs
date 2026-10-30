@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Parser, parseDocument } from "htmlparser2";
+import { Parser, parseDocument } from "./html-sanitizer.mjs";
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const check = (condition, detail) => { if (!condition) throw new Error(detail); };
 const blocked = new Set(["template", "noscript", "textarea", "title", "xmp", "plaintext", "iframe", "svg", "math"]);

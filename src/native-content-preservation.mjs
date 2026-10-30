@@ -1,4 +1,4 @@
-import { Parser, parseDocument } from "htmlparser2";
+import { Parser, parseDocument } from "./html-sanitizer.mjs";
 
 // These nodes/handlers are removed by the CURRENT renderer. Describe the lost
 // native facility, not whether source content is valid/safe or what application

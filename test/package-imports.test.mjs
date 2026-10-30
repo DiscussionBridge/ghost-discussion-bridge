@@ -27,9 +27,9 @@ for (const [module, member] of [
   });
 }
 
-test("normal sanitizer bridge returns the exact locked sanitizer function", () => {
+test("normal HTML dependency bridge returns the exact locked functions", () => {
   const address = pathToFileURL(path.join(packageRoot, "src", "html-sanitizer.mjs")).href;
-  const program = `import { createRequire } from 'node:module'; const { default: sanitizer } = await import(${JSON.stringify(address)}); const original = createRequire(${JSON.stringify(address)})('sanitize-html'); if (sanitizer !== original) throw new Error('Sanitizer implementation was replaced');`;
+  const program = `import { createRequire } from 'node:module'; const loaded = await import(${JSON.stringify(address)}); const require = createRequire(${JSON.stringify(address)}); if (loaded.default !== require('sanitize-html') || loaded.Parser !== require('htmlparser2').Parser || loaded.parseDocument !== require('htmlparser2').parseDocument || loaded.decodeHTML !== require('entities').decodeHTML) throw new Error('Locked HTML implementation was replaced');`;
   const result = spawnSync(process.execPath, ["--input-type=module", "-e", program], {
     cwd: packageRoot, env: { ...process.env, NODE_OPTIONS: "" },
     encoding: "utf8", timeout: 30000, windowsHide: true,
@@ -38,3 +38,23 @@ test("normal sanitizer bridge returns the exact locked sanitizer function", () =
   assert.equal(result.signal, null, result.stderr);
   assert.equal(result.status, 0, result.stderr);
 });
+
+for (const [dependency, statement, member] of [
+  ["sanitizer", "import sanitizeHtml from 'sanitize-html';", "sanitizeHtml"],
+  ["parser", "import { Parser } from 'htmlparser2';", "Parser"],
+  ["entity decoder", "import { decodeHTML } from 'entities';", "decodeHTML"],
+]) for (const dependencyFirst of [true, false]) {
+  test(`normal package supports static ${dependency} co-import ${dependencyFirst ? "before" : "after"} its service`, () => {
+    const address = pathToFileURL(path.join(packageRoot, "src", "service.mjs")).href;
+    const service = `import { buildServer } from ${JSON.stringify(address)};`;
+    const program = (dependencyFirst ? statement + service : service + statement)
+      + `if (typeof ${member} !== 'function' || typeof buildServer !== 'function') throw new Error('Incomplete static co-import');`;
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", program], {
+      cwd: packageRoot, env: { ...process.env, NODE_OPTIONS: "" },
+      encoding: "utf8", timeout: 30000, windowsHide: true,
+    });
+    assert.ifError(result.error);
+    assert.equal(result.signal, null, result.stderr);
+    assert.equal(result.status, 0, result.stderr);
+  });
+}
