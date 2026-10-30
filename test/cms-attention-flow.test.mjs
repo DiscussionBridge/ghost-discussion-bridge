@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { fixture, sha, resourceId, mappingId, workId } from "./fixtures/cms-native-fixture.mjs";
 import { ghostCmsNative } from "../src/cms-native-publication.mjs";
 import { synchronizeCms } from "../src/cms-coordinator.mjs";
@@ -227,5 +227,8 @@ for (const kind of ["foreign", "uncertain"]) test(`actual ${kind} native facts s
 });
 
 after(() => {
-  if (process.env.GHOST_CORE_INTEROP === "1") writeFileSync(new URL("../../../../planning/v4-attention-recovery-fixes-20261025/GHOST_CORE_INTEROP.json", import.meta.url), JSON.stringify(interop, null, 2) + "\n");
+  if (process.env.GHOST_CORE_INTEROP === "1") {
+    mkdirSync(new URL("../.tmp/", import.meta.url), { recursive: true });
+    writeFileSync(new URL("../.tmp/GHOST_CORE_INTEROP.json", import.meta.url), JSON.stringify(interop, null, 2) + "\n");
+  }
 });

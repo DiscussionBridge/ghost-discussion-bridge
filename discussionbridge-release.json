@@ -8,13 +8,13 @@
     "version": "0.4.0-alpha.1"
   },
   "wire_version": "v4",
-  "candidate_id": "discussionbridge-v4-core-20261025-r6",
+  "candidate_id": "discussionbridge-v4-core-20261029-r7",
   "status": "implementation_candidate_not_exact_approved_not_frozen",
   "release_version": null,
   "repository": "https://github.com/DiscussionBridge/ghost-discussion-bridge",
   "contract": {
-    "schema_sha256": "8563a9b1346e3bf82635bd65a46bb1e25415a1003d7432f8fcb8c1c6e4f03c14",
-    "runtime_sha256": "e1790fd800abcae9772d327625ea188f04ec68c63ce7917cb0785f5cdea22538",
-    "normative_sha256": "df31c5d2fc387a8b12b388438450eccd97966de34c82b1bf417634b21a36b495"
+    "schema_sha256": "e6a15a6d70f7bc8b8ee82aa22a0b9c2ff1bbf2da6277f7087118be9e026ce5c0",
+    "runtime_sha256": "acdfddf574910fb7e6cf2e2fe6837b3d266e8d93f1d96cee5e7699122d779076",
+    "normative_sha256": "808042688cbde88fac0acdf1187e4cb8c251e13025bfcf09cf3a3c361ca02003"
   }
 }

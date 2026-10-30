@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { createHash, createHmac } from "node:crypto";
 import { buildServer } from "../src/service.mjs";
 import { operatorCsrfToken, renderOperatorPage } from "../src/operator-surface.mjs";
+import { validateCms } from "../lib/cms-runtime.mjs";
 
-// Source-authored recovery coverage. Execution is separately held by Root.
+// Existing protected operator HTTP behavior, using synthetic loopback fixtures.
 const nativeId = "0123456789abcdef01234567";
 const refusedMutationId = "11111111-1111-4111-8111-111111111111";
 const config = {
@@ -150,11 +151,24 @@ test("source Retry refuses malformed native identity or refused-request identity
       const form = retryForm(); form.set("native_id", value);
       assert.equal((await submit(form)).status, 400, `native identity ${JSON.stringify(value)}`);
     }
-    for (const value of ["", "not-a-uuid", refusedMutationId.replaceAll("-", ""), `${refusedMutationId}/`, "11111111-1111-4111-7111-111111111111", `${refusedMutationId}\n`]) {
+    for (const value of ["", "not-a-uuid", refusedMutationId.replaceAll("-", ""), `${refusedMutationId}/`, "11111111-1111-4111-g111-111111111111", "00000000-0000-0000-0000-000000000000", `${refusedMutationId}\n`]) {
       const form = retryForm(); form.set("refused_mutation_id", value);
       assert.equal((await submit(form)).status, 400, `refused identity ${JSON.stringify(value)}`);
     }
     assert.equal(calls, 0);
+  });
+});
+
+test("source Retry form accepts the unchanged shared lowercase UUID grammar without a new variant restriction", async () => {
+  const calls = [];
+  await withServer({ retrySource: async (request) => calls.push(request) }, async ({ submit }) => {
+    for (const value of ["11111111-1111-4111-7111-111111111111", "11111111-1111-0111-1111-111111111111", "abcdefab-cdef-abcd-efab-cdefabcdefab"]) {
+      assert.equal(validateCms("UUID", value), value);
+      const form = retryForm(); form.set("refused_mutation_id", value);
+      assert.equal((await submit(form)).status, 303);
+      assert.deepEqual(calls.at(-1), { native_id: nativeId, refused_mutation_id: value });
+    }
+    assert.equal(calls.length, 3);
   });
 });
 

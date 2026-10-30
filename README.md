@@ -1,10 +1,20 @@
 # DiscussionBridge for Ghost
 
-Development implementation **0.4.0-alpha.1**, wire **V4**, candidate `discussionbridge-v4-core-20261025-r6`, with the current 36-route/169-type contract pair. Release version is null; this package is not exact-approved, frozen, released or native deployment qualified.
+Development implementation **0.4.0-alpha.1**, wire **V4**, candidate `discussionbridge-v4-core-20261029-r7`, with the exact shared contract pair recorded in `lib/PROVENANCE.json`. Release version is null; this package is not exact-approved, frozen, released or native deployment qualified.
 
 The adapter uses Ghost's existing Admin API and a separate HTTPS adapter service. It connects explicitly opted-in published Ghost sources to Discourse and materializes authorized Discourse sources as owned native Ghost posts or pages. Native public Discourse comments, embeds and Simple/Full/Interactive readers remain available. Ghost membership does not confer forum authorization.
 
 There is one contract pair in `lib/cms-schema.json` and `lib/cms-runtime.mjs`, with the exact hashes in `discussionbridge-release.json`. No earlier-development initialization, adoption, protocol selector, second source engine or old-wire fallback is included. Native Ghost API versioning and the `ghost-owned-fragment-v1` extraction profile are current platform/native implementation details.
+
+Maintainers refresh the portable SDK offline with `node scripts/refresh-contract.mjs /path/to/reviewed/adapter-contract`, using exact shared commit `09d77c0209835c2d996aad294d161f167c7bd838`. The refresh checks fixed hashes and stages metadata/target validation before writes. Four shared members, including embedded IDNA dependency/license receipts, and three fixed development fixtures are copied from that source. No customer runtime download, native ownership grant or historical journal retagging is performed. The additive attention-recovery capability keeps its separate R6 identity; it is not the current artifact candidate label.
+
+## Development and ordinary-package checks
+
+Use this checkout's declared dependencies: `npm ci`, `npm run check`, then `npm test`. The normal browser builder stages loader JavaScript, its local-font CSS and native rich-content JavaScript before writing. It carries actual dependency terms and a source/output/font ledger in `public/browser-build-provenance.json`. Missing required terms, linked managed targets or changed previously recorded notices stop the build. Only obsolete notices still matching the previous generated ledger may be removed; unknown files remain for explicit reconciliation. The optional `DISCUSSIONBRIDGE_BUILD_RUNTIME_ROOT` is read-only maintainer fixture reuse, not an installation hook or runtime SDK download.
+
+Run `node scripts/check-package.mjs /path/to/installed/ghost-discussion-bridge` on a normal `npm pack` installation. It checks the pinned SDK, actual build inputs/three outputs and complete notice inventory without changing files. The existing shipped `npm-shrinkwrap.json` remains the normal lock; no private release builder or user-host browser compilation is required. Tests/fixtures and the test-only resolver are not shipped. CI exercises both Node22 and24, complete tests, ordinary build/pack and an isolated normal consumer with actual SDK corpus/import checks. Those checks do not install Ghost, change a forum/theme/service or qualify an installed deployment.
+
+Real-browser tests use an installed headless Chrome, or `DISCUSSIONBRIDGE_BROWSER_EXECUTABLE`, with fresh synthetic content and no signed-in profile. The loader test fulfills only two synthetic asset URLs from the actual built JS/CSS and blocks outside traffic; the native rich-content test blocks all page network. Windows file-link limitations are explicit skips and must execute on Linux CI, not be treated as passed locally.
 
 Start with [installation](docs/INSTALLATION.md), [managed hosting](docs/MANAGED_HOSTING.md) and the [configuration example](docs/adapter.env.example). [Demo integration](demo/README.md) describes native per-mode placeholders; it is not a deployed demo or qualification record.
 

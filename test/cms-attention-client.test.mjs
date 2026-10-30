@@ -27,5 +27,8 @@ test("r6 rejects generic ready attestation, unknown selectors and changed normal
   assert.throws(() => client.prepareMutation("V4-34", { mutation_id: id, context_sha256: "a".repeat(64), ready: true }, { inspection_id: id }));
   assert.throws(() => client.prepareMutation("V4-36", { mutation_id: id, work_id: id, mapping_id: id }, { recovery_id: id }));
   assert.throws(() => client.prepareMutation("V4-13", { mutation_id: id, work_id: id })); assert.equal(requests, 0);
-  assert.equal(cmsVendor.candidate_id, capability.candidate_id);
+  // The additive attention capability retains its R6 identity independently
+  // of the current R7 URL/runtime artifact selection.
+  assert.equal(cmsVendor.candidate_id, "discussionbridge-v4-core-20261029-r7");
+  assert.equal(capability.candidate_id, "discussionbridge-v4-core-20261025-r6");
 });

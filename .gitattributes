@@ -1,2 +1,4 @@
+* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 public/discussionbridge-loader.js whitespace=-trailing-space
 public/discussionbridge-rich-content.js whitespace=-trailing-space
+public/THIRD_PARTY_LICENSES/** whitespace=-trailing-space

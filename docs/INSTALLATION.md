@@ -1,6 +1,6 @@
 # Ghost V4 installation
 
-This is the common external adapter preparation path for a new V4 baseline. Development package `0.4.0-alpha.1` uses candidate `discussionbridge-v4-core-20261025-r6`, one 36-route/169-type pair and no earlier-development migration. The current normal package file selection contains 72 members. Release version is null. Offline archive creation and passive readback use existing files; they do not install dependencies, rebuild browser assets or qualify a live Ghost site, forum, theme or Linux host. Earlier author/native execution records retain their own historical source identities and counts.
+This is the common external adapter preparation path for a new V4 baseline. Development package `0.4.0-alpha.1` uses candidate `discussionbridge-v4-core-20261029-r7`, the exact shared pair in `lib/PROVENANCE.json` and no earlier-development migration. The normal npm artifact determines its actual member inventory; a historical file count is not a package verifier. Release version is null. Offline archive creation and passive readback use existing files; they do not install dependencies, rebuild browser assets or qualify a live Ghost site, forum, theme or Linux host. Earlier author/native execution records retain their own historical source identities and counts.
 
 ## Native and host prerequisites
 

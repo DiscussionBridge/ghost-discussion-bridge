@@ -1,0 +1,56 @@
+{
+  "wire_version": "v4",
+  "implementation_version": "0.4.0-alpha.1",
+  "release_version": null,
+  "candidate_id": "discussionbridge-v4-core-20261029-r7",
+  "status": "implementation_candidate_not_exact_approved_not_frozen",
+  "source": {
+    "repository": "https://github.com/DiscussionBridge/discussionbridge-adapter-contract",
+    "commit": "09d77c0209835c2d996aad294d161f167c7bd838"
+  },
+  "normative": {
+    "path": "normative/CONTRACT.json",
+    "bytes": 190024,
+    "sha256": "808042688cbde88fac0acdf1187e4cb8c251e13025bfcf09cf3a3c361ca02003"
+  },
+  "members": [
+    {
+      "path": "cms-runtime.mjs",
+      "bytes": 338600,
+      "sha256": "acdfddf574910fb7e6cf2e2fe6837b3d266e8d93f1d96cee5e7699122d779076"
+    },
+    {
+      "path": "cms-schema.json",
+      "bytes": 117047,
+      "sha256": "e6a15a6d70f7bc8b8ee82aa22a0b9c2ff1bbf2da6277f7087118be9e026ce5c0"
+    },
+    {
+      "path": "idna/DEPENDENCIES.json",
+      "bytes": 8437,
+      "sha256": "2f2a7bce6697e9ed73d2dacd29e244467e3162066d012b7801939032d0847d1e"
+    },
+    {
+      "path": "idna/LICENSES.txt",
+      "bytes": 3288,
+      "sha256": "21fed045273e053184af7f129c5eccd3d24529b04540c2494c8eb5254d46f331"
+    }
+  ],
+  "development_fixtures": [
+    {
+      "path": "test/fixtures/cms-v4/positive-examples.json",
+      "bytes": 41432,
+      "sha256": "b3ea942e9fe6b824ab2a0af5f4eecf46b672d544856fea53929d60a359225b30"
+    },
+    {
+      "path": "test/fixtures/cms-v4/url-domain-policy.json",
+      "bytes": 11462,
+      "sha256": "e6fa88694fe1142f8754c2e50cbee752a9755d63324247aaa9db465450d5672e"
+    },
+    {
+      "path": "test/fixtures/cms-v4/url-contextj.json",
+      "bytes": 464048,
+      "sha256": "5cf9aee605cd002a75d929da35fe0f6bcb99b2dd83a78a71751dc24b95adadd8"
+    }
+  ],
+  "limitation": "Current portable artifacts only; no native ownership, historical state rewrite, installed-profile or release authority."
+}

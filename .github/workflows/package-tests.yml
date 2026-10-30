@@ -1,0 +1,55 @@
+name: Ghost tests and normal package
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'codex/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package_tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install exact locked dependencies
+        run: npm ci
+      - name: Build the three ordinary browser assets and verify their identity
+        run: |
+          npm run check
+          git diff --exit-code -- public
+          node scripts/check-package.mjs .
+      - name: Run the existing service/native-fixture tests and package regressions
+        run: npm test
+      - name: Create ordinary package and install an isolated consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts
+          npm pack --json --pack-destination .artifacts
+          package_file=$(node -p "'ghost-discussion-bridge-' + require('./package.json').version + '.tgz'")
+          consumer=$(mktemp -d "$RUNNER_TEMP/ghost-package-consumer-XXXXXX")
+          npm install --prefix "$consumer" --ignore-scripts --no-audit --no-fund "$PWD/.artifacts/$package_file"
+          node "$consumer/node_modules/ghost-discussion-bridge/scripts/check-package.mjs" "$consumer/node_modules/ghost-discussion-bridge"
+          DISCUSSIONBRIDGE_CONTRACT_TEST_MODULE="$consumer/node_modules/ghost-discussion-bridge/lib" node --test "$PWD/test/contract-runtime.test.mjs"
+          cd "$consumer"
+          node --input-type=module -e "const service=await import('./node_modules/ghost-discussion-bridge/src/service.mjs'); const client=await import('./node_modules/ghost-discussion-bridge/lib/cms-client.mjs'); const vendor=await import('./node_modules/ghost-discussion-bridge/lib/cms-vendor.mjs'); vendor.assertCmsVendor(); if(typeof service.buildServer!=='function'||typeof client.CmsClient!=='function') throw new Error('Normal installed Ghost package imports are incomplete');"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ghost-discussion-bridge-node-${{ matrix.node }}-${{ github.sha }}
+          path: .artifacts/*.tgz
+          include-hidden-files: true
+          if-no-files-found: error

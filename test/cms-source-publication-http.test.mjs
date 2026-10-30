@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { StateStore } from "../src/state-store.mjs";
 import { buildServer } from "../src/service.mjs";
-import { fixture, config, id, key, topic, sha } from "./fixtures/cms-source-fixture.mjs";
+import { fixture, config, id, key, resource, topic, sha } from "./fixtures/cms-source-fixture.mjs";
 
 test("definitive preservation refusal survives signed duplicate notifications and StateStore restart without another request", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ghost-v4-to-refusal-"));
