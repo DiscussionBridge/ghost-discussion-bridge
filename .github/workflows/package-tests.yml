@@ -46,6 +46,7 @@ jobs:
           node "$consumer/node_modules/ghost-discussion-bridge/scripts/check-package.mjs" "$consumer/node_modules/ghost-discussion-bridge"
           DISCUSSIONBRIDGE_CONTRACT_TEST_MODULE="$consumer/node_modules/ghost-discussion-bridge/lib" node --test "$PWD/test/contract-runtime.test.mjs"
           DISCUSSIONBRIDGE_PACKAGE_TEST_ROOT="$consumer/node_modules/ghost-discussion-bridge" node --test "$PWD/test/package-imports.test.mjs"
+          DISCUSSIONBRIDGE_PACKAGE_TEST_ROOT="$consumer/node_modules/ghost-discussion-bridge" node --test "$PWD/test/installation-runtime.test.mjs"
           cd "$consumer"
           node --input-type=module -e "const service=await import('./node_modules/ghost-discussion-bridge/src/service.mjs'); const client=await import('./node_modules/ghost-discussion-bridge/lib/cms-client.mjs'); const vendor=await import('./node_modules/ghost-discussion-bridge/lib/cms-vendor.mjs'); vendor.assertCmsVendor(); if(typeof service.buildServer!=='function'||typeof client.CmsClient!=='function') throw new Error('Normal installed Ghost package imports are incomplete');"
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

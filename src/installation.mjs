@@ -133,7 +133,8 @@ Keep configuration, credentials and the same state directory across future upgra
 
 export async function prepareInstallation({ configFile, outputDirectory, user }) {
   if (process.platform !== "linux") throw new Error("Prepare the service installation on its Linux adapter host");
-  if (Number(process.versions.node.split(".")[0]) < 22) throw new Error("Node 22 or newer is required");
+  const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+  if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 12)) throw new Error("Node 22.12 or newer is required");
   const configuration = safePath(configFile);
   const output = safePath(outputDirectory);
   await ordinaryPath(configuration, { file: true, privateFile: true });
@@ -170,7 +171,7 @@ export function installationDiagnostic(error) {
     "Installation needs an absolute safe path", "Installation path must not use symbolic links or special files",
     "Configuration and credential files must not be accessible to group or other users", "Specify the dedicated non-root adapter user",
     "The common installation uses the adapter origin for operator access", "The adapter proxy needs a DNS hostname",
-    "Use a dedicated state directory", "Prepare the service installation on its Linux adapter host", "Node 22 or newer is required",
+    "Use a dedicated state directory", "Prepare the service installation on its Linux adapter host", "Node 22.12 or newer is required",
     "Invalid connection ID", "Invalid port", "Invalid lane", "Invalid protected value", "Invalid DiscussionBridge connection secret",
     "DiscussionBridge requires executable /usr/bin/flock (util-linux) and the current Node runtime on Linux",
   ]);
