@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import sanitizeHtml from "sanitize-html";
+import sanitizeHtml from "./html-sanitizer.mjs";
 import { CoreClient } from "./core-client.mjs";
 import { operatorAuthorized, operatorCsrfValid, renderOperatorPage } from "./operator-surface.mjs";
 import { serveBrowserAsset } from "./browser-assets.mjs";

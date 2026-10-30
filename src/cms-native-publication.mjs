@@ -3,7 +3,7 @@ import { Parser } from "htmlparser2";
 import { ghostOwnedFragment } from "./native-owned-fragment.mjs";
 import { assertNativeContentRepresentable, assertNativeConversionPreserved } from "./native-content-preservation.mjs";
 export { ghostOwnedFragment } from "./native-owned-fragment.mjs";
-import sanitizeHtml from "sanitize-html";
+import sanitizeHtml from "./html-sanitizer.mjs";
 import { cmsSchema, validateCms } from "../lib/cms-runtime.mjs";
 import { boundedResponse } from "./bounded-response.mjs";
 import { browserLoaderUrl } from "./browser-assets.mjs";
