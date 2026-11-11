@@ -1,8 +1,15 @@
-# DiscussionBridge for Ghost
+# DiscussionBridge Ghost adapter
 
-Development implementation **0.4.0-alpha.1**, wire **V4**, candidate `discussionbridge-v4-core-20261029-r7`, with the exact shared contract pair recorded in `lib/PROVENANCE.json`. Release version is null; this package is not exact-approved, frozen, released or native deployment qualified.
+The Ghost adapter uses Ghost's Admin API and a separate HTTPS service. It sends
+opted-in Ghost publications to Discourse and publishes authorized Discourse
+topics as native Ghost posts or pages. Ghost membership does not grant forum
+access.
 
-The adapter uses Ghost's existing Admin API and a separate HTTPS adapter service. It connects explicitly opted-in published Ghost sources to Discourse and materializes authorized Discourse sources as owned native Ghost posts or pages. Native public Discourse comments, embeds and Simple/Full/Interactive readers remain available. Ghost membership does not confer forum authorization.
+**V4 Alpha source:** [`v0.4.0-alpha.1.ghost-adapter.1`](https://github.com/DiscussionBridge/ghost-discussion-bridge/tree/v0.4.0-alpha.1.ghost-adapter.1) · [GitHub Actions](https://github.com/DiscussionBridge/ghost-discussion-bridge/actions/runs/43107196322)
+
+The adapter uses the [V4 R7 contract](https://github.com/DiscussionBridge/discussionbridge-adapter-contract/tree/09d77c0209835c2d996aad294d161f167c7bd838). See the package and
+deployment instructions below. For a Ghost integration that runs inside
+Discourse, see the [Ghost connector](https://github.com/DiscussionBridge/discourse-discussion-bridge-ghost).
 
 There is one contract pair in `lib/cms-schema.json` and `lib/cms-runtime.mjs`, with the exact hashes in `discussionbridge-release.json`. No earlier-development initialization, adoption, protocol selector, second source engine or old-wire fallback is included. Native Ghost API versioning and the `ghost-owned-fragment-v1` extraction profile are current platform/native implementation details.
 
