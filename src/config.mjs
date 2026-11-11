@@ -47,6 +47,9 @@ export function loadConfig(environment = process.env) {
   const sourceSyncIntervalSeconds = validateSyncInterval(Number(environment.DISCUSSIONBRIDGE_SOURCE_SYNC_INTERVAL_SECONDS ?? 0));
   const publicationType = (environment.DISCUSSIONBRIDGE_PUBLICATION_TYPE ?? "post").trim();
   if (!["post", "page"].includes(publicationType)) throw new Error("Invalid DISCUSSIONBRIDGE_PUBLICATION_TYPE");
+  const creditSetting = environment.DISCUSSIONBRIDGE_CREDIT_ENABLED ?? "true";
+  if (creditSetting !== "true" && creditSetting !== "false") throw new Error("DISCUSSIONBRIDGE_CREDIT_ENABLED must be true or false");
+  const creditEnabled = creditSetting === "true";
   const standaloneForumName = Object.hasOwn(environment, "DISCUSSIONBRIDGE_FORUM_NAME") ? environment.DISCUSSIONBRIDGE_FORUM_NAME : undefined;
   if (Object.hasOwn(environment, "DISCUSSIONBRIDGE_FORUM_NAME") && (typeof standaloneForumName !== "string" || !standaloneForumName.trim() || Buffer.byteLength(standaloneForumName) > 200 || /\p{Cc}/u.test(standaloneForumName) || Buffer.from(standaloneForumName, "utf8").toString("utf8") !== standaloneForumName)) throw new Error("Invalid DISCUSSIONBRIDGE_FORUM_NAME");
   return {
@@ -57,7 +60,7 @@ export function loadConfig(environment = process.env) {
     ghostAdminApiKey: protectedValue(required("DISCUSSIONBRIDGE_GHOST_ADMIN_API_KEY_FILE", environment)),
     stateFile: required("DISCUSSIONBRIDGE_STATE_FILE", environment),
     sourceNativeIntegrationFile: (environment.DISCUSSIONBRIDGE_SOURCE_NATIVE_INTEGRATION_FILE ?? "").trim() || null,
-    lane, port, webhookMaximumBytes, sourceSyncIntervalSeconds, publicationType, standaloneForumName,
+    lane, port, webhookMaximumBytes, sourceSyncIntervalSeconds, publicationType, standaloneForumName, creditEnabled,
     operatorPassword,
     operatorOrigin: optionalHttpsOrigin("DISCUSSIONBRIDGE_OPERATOR_ORIGIN", environment, adapterOrigin),
   };

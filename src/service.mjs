@@ -109,7 +109,7 @@ function sanitizeReply(html) {
   });
 }
 
-async function renderSimpleDiscussion(client, topicId, forumOrigin, standaloneForumName) {
+async function renderSimpleDiscussion(client, topicId, forumOrigin, standaloneForumName, creditEnabled = true) {
   const [topic, poweredBy] = await Promise.all([client.publicTopic(topicId), poweredByDiscourse(client, forumOrigin).catch(() => false)]);
   const postStream = topic?.post_stream;
   if (!postStream || !Array.isArray(postStream.posts) || !Array.isArray(postStream.stream)) throw new Error("Invalid topic response");
@@ -145,17 +145,20 @@ async function renderSimpleDiscussion(client, topicId, forumOrigin, standaloneFo
   let content = replies.length ? replies.slice(0, INITIAL_SIMPLE_REPLIES).join("") : '<p class="discussionbridge-simple__empty">No comments yet.</p>';
   const remaining = replies.slice(INITIAL_SIMPLE_REPLIES);
   if (remaining.length) content += `<details class="discussionbridge-simple__more"><summary><span class="discussionbridge-simple__more-closed">Show ${remaining.length} more ${remaining.length === 1 ? "comment" : "comments"}</span><span class="discussionbridge-simple__more-open">Show fewer comments</span></summary>${remaining.join("")}</details>`;
+  let forumLabel = "";
   if (postStream.stream.length - 1 > MAX_SIMPLE_REPLIES) {
     if (standaloneForumName === undefined && typeof client.publicForumTitle !== "function") throw new Error("Native forum display name is unavailable");
     const name = standaloneForumName === undefined ? await client.publicForumTitle() : standaloneForumName;
     if (typeof name !== "string" || !name.trim() || Buffer.byteLength(name) > 200 || /\p{Cc}/u.test(name) || Buffer.from(name, "utf8").toString("utf8") !== name) throw new Error("Invalid standalone forum display name");
+    forumLabel = "Open in " + name.trim();
     content += `<p class="discussionbridge-simple__limit">Showing the first ${MAX_SIMPLE_REPLIES} comments. <a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer">View the complete discussion on ${escapeHtml(name.trim())}</a>.</p>`;
   }
   const attribution = poweredBy
     ? `<a class="discussionbridge-powered-by" href="https://www.discourse.org/powered-by" aria-label="Powered by Discourse" rel="nofollow noopener noreferrer"><span>Powered by</span><span class="discussionbridge-powered-by__wordmark">${discourseWordmark}</span></a>`
     : "";
-  const bridgeCredit = '<footer class="discussionbridge-credit" aria-label="DiscussionBridge credit"><span class="discussionbridge-credit__prefix">Connected by</span> <a class="discussionbridge-credit__brand" href="https://discussionbridge.dev/" rel="nofollow">DiscussionBridge</a></footer>';
-  return `<section class="discussionbridge-simple"><div class="discussionbridge-comments-header"><h2>Comments</h2><a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer">Open discussion</a></div>${content}${attribution}${bridgeCredit}</section>`;
+  if (!forumLabel && typeof standaloneForumName === "string" && standaloneForumName.trim()) forumLabel = "Open in " + standaloneForumName.trim();
+  const bridgeCredit = creditEnabled ? '<footer class="discussionbridge-credit" aria-label="DiscussionBridge credit"><span class="discussionbridge-credit__prefix">Connected by</span> <a class="discussionbridge-credit__brand" href="https://discussionbridge.dev/" rel="nofollow">DiscussionBridge</a></footer>' : "";
+  return `<section class="discussionbridge-simple"><div class="discussionbridge-comments-header"><h2>Discussion</h2><a href="${escapeHtml(topicUrl)}" rel="nofollow noopener noreferrer" data-discussionbridge-forum-label="${escapeHtml(forumLabel)}">Open in forum</a></div>${content}${attribution}${bridgeCredit}</section>`;
 }
 
 async function poweredByDiscourse(client, forumOrigin) {
@@ -335,10 +338,10 @@ export function buildServer(config, store, client = new CoreClient(config), oper
         assertNativeConversionPreserved(prepared, cooked);
         const safeTopicUrl = topicUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
         const safeForumOrigin = config.serverUrl.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
-        const discussion = mode === "simple" ? await renderSimpleDiscussion(client, record.topic_id, config.serverUrl, record.forum_name ?? config.standaloneForumName) : "";
-        const heading = mode === "simple" ? "" : `<div class="discussionbridge-comments-header"><h2>Discussion</h2><a href="${safeTopicUrl}" rel="nofollow noopener noreferrer">Open discussion</a></div>`;
+        const discussion = mode === "simple" ? await renderSimpleDiscussion(client, record.topic_id, config.serverUrl, record.forum_name ?? config.standaloneForumName, config.creditEnabled) : "";
+        const heading = mode === "simple" ? "" : `<div class="discussionbridge-comments-header"><h2>Discussion</h2><a href="${safeTopicUrl}" rel="nofollow noopener noreferrer" data-discussionbridge-forum-label="Open in ${escapeHtml(record.forum_name)}">Open in forum</a></div>`;
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-        return response.end(`<section class="discussionbridge-presentation">${cooked}${heading}<div data-discussionbridge-presentation-comments data-presentation-mode="${mode}" data-topic-id="${record.topic_id}" data-topic-url="${safeTopicUrl}" data-forum-origin="${safeForumOrigin}">${discussion}</div></section>`);
+        return response.end(`<section class="discussionbridge-presentation">${cooked}${heading}<div data-discussionbridge-presentation-comments data-presentation-mode="${mode}" data-topic-id="${record.topic_id}" data-topic-url="${safeTopicUrl}" data-forum-origin="${safeForumOrigin}"${config.creditEnabled === false ? ' data-discussionbridge-credit-disabled' : ""}>${discussion}</div></section>`);
       }
       if (request.method === "GET" && url.pathname === "/comments") {
         const sourceUrl = exactGhostSource(url.searchParams.get("source"), config.ghostOrigin);
@@ -349,7 +352,8 @@ export function buildServer(config, store, client = new CoreClient(config), oper
         const post = matches[0];
         if (!UUID.test(post.resource_id ?? "") || !isTopicIdentity(post.topic_id)) throw new Error("Invalid stored discussion identity");
         const topicUrl = nativeTopicUrl(post.topic_url, config.serverUrl, post.topic_id);
-        return json(response, 200, { topic_id: post.topic_id, topic_url: topicUrl, forum_origin: config.serverUrl });
+        return json(response, 200, { topic_id: post.topic_id, topic_url: topicUrl, forum_origin: config.serverUrl,
+          ...(config.creditEnabled === false ? { credit_enabled: false } : {}) });
       }
       if (request.method === "GET" && url.pathname === "/simple") {
         const sourceUrl = exactGhostSource(url.searchParams.get("source"), config.ghostOrigin);
@@ -360,7 +364,7 @@ export function buildServer(config, store, client = new CoreClient(config), oper
         const post = matches[0];
         if (!isTopicIdentity(post.topic_id)) throw new Error("Invalid stored discussion identity");
         nativeTopicUrl(post.topic_url, config.serverUrl, post.topic_id);
-        const html = await renderSimpleDiscussion(client, post.topic_id, config.serverUrl, config.standaloneForumName);
+        const html = await renderSimpleDiscussion(client, post.topic_id, config.serverUrl, config.standaloneForumName, config.creditEnabled);
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60" });
         return response.end(html);
       }

@@ -7,8 +7,8 @@
       "sha256": "f7fc6d110aa5e9f412c211990c6a4667b854ead3d5e8de06b7ab4aef31028062"
     },
     "package.json": {
-      "bytes": 1380,
-      "sha256": "654f4267396630b96bc9d14cf5bedfe660039483f87282a6be2ebf343a36fa1e"
+      "bytes": 1413,
+      "sha256": "011f40b0f410548f3a4849411b45f79bcec912b2da5d12afcad2c31324f7aef3"
     },
     "scripts/build-browser.mjs": {
       "bytes": 5924,
@@ -27,8 +27,8 @@
       "sha256": "727a217475425bbfd704791927edc33532d0e9be0c93bb83abb16d6e6a571a48"
     },
     "src/browser-loader.mjs": {
-      "bytes": 15517,
-      "sha256": "5ef0c7297b5b6cf5087e5bee842058995fb3086eda9393b538c255edc8a0ce26"
+      "bytes": 14219,
+      "sha256": "c8a0b96ad1ab767441426c44bcba04c8f5bde344099cbffce1400769c17da021"
     },
     "src/browser-rich-content.mjs": {
       "bytes": 1103,
@@ -38,6 +38,14 @@
       "bytes": 320,
       "sha256": "87ad83fdfd3dcdefd4a50726bdc898ba0535225fc61eb488c0f92a8f1353770c"
     },
+    "src/discussion-credit.css": {
+      "bytes": 1682,
+      "sha256": "a7b19ca42ef41aec4fc01c0492c107f03d68516651bae8530f9c1fc38d3ceba9"
+    },
+    "src/discussion-labels.mjs": {
+      "bytes": 2654,
+      "sha256": "a1bf8c1a15964043e8985feaca14fa7150e83dfd176fa66be19b0081d229fe3a"
+    },
     "src/topic-identity.mjs": {
       "bytes": 760,
       "sha256": "ddd212e2f78c496a65d42ba81ac897319fa8d09307a9cfb02fb86f7452302a7b"
@@ -45,12 +53,12 @@
   },
   "outputs": {
     "discussionbridge-loader.js": {
-      "bytes": 3463469,
-      "sha256": "b1a05d502c1eaa8405924c71e4008a645828dca13d465ffcc7baa3602a62aa4a"
+      "bytes": 3463872,
+      "sha256": "ad61dd9a3ab5641408c8166905aa92df553f834edb285d9c279b53e665d17136"
     },
     "discussionbridge-loader.css": {
-      "bytes": 1459688,
-      "sha256": "43f28570f2da8b4000ca14906cf678d6acac7114e10ac1a41c218a8ba745a91b"
+      "bytes": 1461088,
+      "sha256": "f99bcefdb72763a6c8d610a9b6adce648712f2f2b5a973eeff05578a67a219ff"
     },
     "discussionbridge-rich-content.js": {
       "bytes": 3452572,

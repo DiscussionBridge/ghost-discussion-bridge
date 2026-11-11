@@ -1,5 +1,6 @@
 import katex from "katex";
 import "katex/dist/katex.min.css";
+import "./discussion-credit.css";
 import mermaid from "mermaid";
 import { isInteractiveCommentsMode, normalizeCommentsMode } from "./comments-mode.mjs";
 import { browserDeployment } from "./browser-deployment.mjs";
@@ -120,10 +121,11 @@ function installContents(root) {
 }
 
 function installDiscussionStyles() {
+  installStylesheet();
   if (!document.querySelector("style[data-discussionbridge-comments-style]")) {
     const style = document.createElement("style");
     style.setAttribute("data-discussionbridge-comments-style", "");
-    style.textContent = ".discussionbridge-comments-header{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-block:2rem 1rem}.discussionbridge-comments-header h2{margin:0}.discussionbridge-simple__reply{display:grid;grid-template-columns:2.75rem minmax(0,1fr);gap:1rem;padding:1rem 0;border-top:1px solid color-mix(in srgb,currentColor 14%,transparent)}.discussionbridge-simple__avatar{display:grid;width:2.75rem;height:2.75rem;overflow:hidden;place-items:center;border-radius:50%;background:color-mix(in srgb,currentColor 10%,transparent);font-weight:750}.discussionbridge-simple__avatar img{width:100%;height:100%;object-fit:cover}.discussionbridge-simple__content{min-width:0}.discussionbridge-simple__meta{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin:0 0 .65rem;font-size:14px}.discussionbridge-simple__more summary{width:max-content;max-width:100%;margin:1rem auto;padding:.55rem .9rem;border:1px solid color-mix(in srgb,currentColor 24%,transparent);border-radius:999px;cursor:pointer;font-weight:700}.discussionbridge-simple__more-open{display:none}.discussionbridge-simple__more[open] .discussionbridge-simple__more-closed{display:none}.discussionbridge-simple__more[open] .discussionbridge-simple__more-open{display:inline}.discussionbridge-simple__limit{text-align:center;font-size:.9rem}.discussionbridge-powered-by{display:flex;align-items:center;justify-content:center;gap:.45rem;margin:.8rem auto 0;color:inherit;font-size:.8rem;text-decoration:none;opacity:.72}.discussionbridge-comments-host .discussionbridge-powered-by{display:flex;align-items:center;justify-content:center}.discussionbridge-powered-by__wordmark{display:inline-flex;width:6.4rem;padding:.12rem .28rem;border-radius:.2rem;background:#fff}.discussionbridge-powered-by__wordmark svg{display:block;width:100%;height:auto}.discussionbridge-credit{margin:.45rem 0 0;text-align:center;font-size:.875rem;font-weight:600;line-height:1.4}.gh-content .discussionbridge-credit,.discussionbridge-comments-host .discussionbridge-credit{text-align:center}.discussionbridge-credit__prefix{opacity:.72}.discussionbridge-credit__brand{position:relative;color:inherit;text-decoration:none;opacity:.72;transition:color 160ms ease,opacity 160ms ease}.gh-content .discussionbridge-credit__brand:link,.gh-content .discussionbridge-credit__brand:visited,.discussionbridge-comments-host .discussionbridge-credit__brand:link,.discussionbridge-comments-host .discussionbridge-credit__brand:visited{color:inherit;text-decoration:none}.discussionbridge-credit__brand::after{position:absolute;right:0;bottom:-.12em;left:0;height:1px;background:currentColor;content:\"\";transform:scaleX(0);transform-origin:center;transition:transform 180ms ease}.discussionbridge-credit__brand:hover,.discussionbridge-credit__brand:focus-visible{color:#3451b2;opacity:1}.discussionbridge-credit__brand:hover::after,.discussionbridge-credit__brand:focus-visible::after{transform:scaleX(1)}.discussionbridge-credit__brand:focus-visible{border-radius:.15rem;outline:2px solid currentColor;outline-offset:.2rem}@media(max-width:520px){.discussionbridge-comments-header,.discussionbridge-simple__meta{align-items:flex-start;flex-direction:column}}@media(prefers-reduced-motion:reduce){.discussionbridge-credit__brand,.discussionbridge-credit__brand::after{transition:none}}";
+    style.textContent = ".discussionbridge-comments-header{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin-block:2rem 1rem}.discussionbridge-comments-header h2{margin:0}.discussionbridge-simple__reply{display:grid;grid-template-columns:2.75rem minmax(0,1fr);gap:1rem;padding:1rem 0;border-top:1px solid color-mix(in srgb,currentColor 14%,transparent)}.discussionbridge-simple__avatar{display:grid;width:2.75rem;height:2.75rem;overflow:hidden;place-items:center;border-radius:50%;background:color-mix(in srgb,currentColor 10%,transparent);font-weight:750}.discussionbridge-simple__avatar img{width:100%;height:100%;object-fit:cover}.discussionbridge-simple__content{min-width:0}.discussionbridge-simple__meta{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;margin:0 0 .65rem;font-size:14px}.discussionbridge-simple__more summary{width:max-content;max-width:100%;margin:1rem auto;padding:.55rem .9rem;border:1px solid color-mix(in srgb,currentColor 24%,transparent);border-radius:999px;cursor:pointer;font-weight:700}.discussionbridge-simple__more-open{display:none}.discussionbridge-simple__more[open] .discussionbridge-simple__more-closed{display:none}.discussionbridge-simple__more[open] .discussionbridge-simple__more-open{display:inline}.discussionbridge-simple__limit{text-align:center;font-size:.9rem}.discussionbridge-powered-by{display:flex;align-items:center;justify-content:center;gap:.45rem;margin:.8rem auto 0;color:inherit;font-size:.8rem;text-decoration:none;opacity:.72}.discussionbridge-comments-host .discussionbridge-powered-by{display:flex;align-items:center;justify-content:center}.discussionbridge-powered-by__wordmark{display:inline-flex;width:6.4rem;padding:.12rem .28rem;border-radius:.2rem;background:#fff}.discussionbridge-powered-by__wordmark svg{display:block;width:100%;height:auto}@media(max-width:520px){.discussionbridge-comments-header,.discussionbridge-simple__meta{align-items:flex-start;flex-direction:column}}";
     document.head.appendChild(style);
   }
 }
@@ -159,13 +161,14 @@ function installEmbeddedDiscussion(target, record, mode, addHeader = true, sourc
     heading.textContent = "Discussion";
     const link = document.createElement("a");
     link.href = topicUrl.href;
-    link.textContent = "Open discussion";
+    link.textContent = "Open in forum";
+    if (record.forum_name) link.setAttribute("data-discussionbridge-forum-label", `Open in ${record.forum_name}`);
     link.rel = "nofollow noopener noreferrer";
     header.append(heading, link);
     target.before(header);
   }
   installDiscussionStyles();
-  installBridgeCredit(target);
+  if (record.credit_enabled !== false) installBridgeCredit(target);
   target.id = "discourse-comments";
   window.DiscourseEmbed = {
     discourseUrl: forumOrigin.href,
@@ -224,6 +227,7 @@ function initializeBrowser() {
           topic_id: discussion.getAttribute("data-topic-id"),
           topic_url: discussion.getAttribute("data-topic-url"),
           forum_origin: discussion.getAttribute("data-forum-origin"),
+          credit_enabled: !discussion.hasAttribute("data-discussionbridge-credit-disabled"),
         }, mode, false, true);
       })
       .catch(() => { target.textContent = "Discussion is temporarily unavailable."; });
@@ -260,3 +264,4 @@ function initializeBrowser() {
 }
 
 initializeBrowser();
+import "./discussion-labels.mjs";

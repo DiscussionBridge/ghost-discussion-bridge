@@ -16,6 +16,7 @@
     "scripts/bundled-license.mjs",
     "scripts/check-package.mjs",
     "src/*.mjs",
+    "src/discussion-credit.css",
     "lib/*.mjs",
     "lib/cms-schema.json",
     "lib/PROVENANCE.json",
