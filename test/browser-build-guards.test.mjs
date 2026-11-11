@@ -9,7 +9,7 @@ import test from 'node:test';
 import {bundledLicense} from '../scripts/bundled-license.mjs';
 
 const repository=fileURLToPath(new URL('../',import.meta.url));
-const inputs=['package.json','npm-shrinkwrap.json','scripts/build-browser.mjs','scripts/bundled-license.mjs','scripts/managed-output.mjs','src/browser-loader.mjs','src/comments-mode.mjs','src/browser-deployment.mjs','src/topic-identity.mjs','src/browser-rich-content.mjs'];
+const inputs=['package.json','npm-shrinkwrap.json','scripts/build-browser.mjs','scripts/bundled-license.mjs','scripts/managed-output.mjs','src/browser-loader.mjs','src/comments-mode.mjs','src/browser-deployment.mjs','src/topic-identity.mjs','src/browser-rich-content.mjs','src/discussion-credit.css','src/discussion-labels.mjs'];
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 function fixture() {
   const parent=fs.mkdtempSync(path.join(tmpdir(),'ghost-build-guard-'));

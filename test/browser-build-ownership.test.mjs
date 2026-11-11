@@ -11,7 +11,7 @@ test('normal Ghost builder preserves unknown/modified notices and refuses linked
   const scratch=path.join(repository,'.tmp');fs.mkdirSync(scratch,{recursive:true});
   const root=path.join(scratch,'browser-ownership-'+randomUUID());fs.mkdirSync(root);
   const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
-  for(const name of ['package.json','npm-shrinkwrap.json','scripts/build-browser.mjs','scripts/bundled-license.mjs','scripts/managed-output.mjs','src/browser-loader.mjs','src/comments-mode.mjs','src/browser-deployment.mjs','src/topic-identity.mjs','src/browser-rich-content.mjs']) {
+  for(const name of ['package.json','npm-shrinkwrap.json','scripts/build-browser.mjs','scripts/bundled-license.mjs','scripts/managed-output.mjs','src/browser-loader.mjs','src/comments-mode.mjs','src/browser-deployment.mjs','src/topic-identity.mjs','src/browser-rich-content.mjs','src/discussion-credit.css','src/discussion-labels.mjs']) {
     const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.copyFileSync(path.join(repository,name),file);
   }
   const run=()=>spawnSync(process.execPath,[path.join(root,'scripts/build-browser.mjs')],{cwd:root,encoding:'utf8',windowsHide:true,timeout:90000,env:{...process.env,DISCUSSIONBRIDGE_BUILD_RUNTIME_ROOT:repository}});

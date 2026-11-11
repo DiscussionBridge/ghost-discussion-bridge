@@ -36,6 +36,7 @@ async function registeredHtml(mode, topicId = "123", state = "active") {
 class Element {
   constructor(tag = "div", attributes = {}) { this.tagName = tag.toUpperCase(); this.attributes = attributes; this.dataset = {}; this.children = []; this._html = ""; this._text = ""; }
   getAttribute(name) { return this.attributes[name] ?? null; }
+  hasAttribute(name) { return Object.hasOwn(this.attributes, name); }
   setAttribute(name, value) { this.attributes[name] = String(value); }
   matches(selector) { return selector === ".discussionbridge-credit" && this.className === "discussionbridge-credit"; }
   appendChild(child) { this.children.push(child); return child; }
