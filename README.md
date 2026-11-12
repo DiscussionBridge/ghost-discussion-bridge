@@ -1,39 +1,12 @@
-# DiscussionBridge Ghost adapter
+# DiscussionBridge for Ghost
 
-The Ghost adapter uses Ghost's Admin API and a separate HTTPS service. It sends
-opted-in Ghost publications to Discourse and publishes authorized Discourse
-topics as native Ghost posts or pages. Ghost membership does not grant forum
-access.
+Bring Discourse discussions to Ghost posts and pages. Choose inline replies
+or a Discourse frame to fit your theme. You can also send eligible Ghost
+articles to Discourse or publish selected forum topics in Ghost.
 
-**V4 Alpha source:** [`v0.4.0-alpha.1.ghost-adapter.1`](https://github.com/DiscussionBridge/ghost-discussion-bridge/tree/v0.4.0-alpha.1.ghost-adapter.1) · [GitHub Actions](https://github.com/DiscussionBridge/ghost-discussion-bridge/actions/runs/43107196322)
+Start with the [Ghost setup guide](docs/INSTALLATION.md) and the
+[theme examples](demo/README.md). If you want to configure Ghost publishing
+from your Discourse admin area, see
+[DiscussionBridge Ghost Connector](https://github.com/DiscussionBridge/discourse-discussion-bridge-ghost).
 
-The adapter uses the [V4 R7 contract](https://github.com/DiscussionBridge/discussionbridge-adapter-contract/tree/09d77c0209835c2d996aad294d161f167c7bd838). See the package and
-deployment instructions below. For a Ghost integration that runs inside
-Discourse, see the [Ghost connector](https://github.com/DiscussionBridge/discourse-discussion-bridge-ghost).
-
-There is one contract pair in `lib/cms-schema.json` and `lib/cms-runtime.mjs`, with the exact hashes in `discussionbridge-release.json`. No earlier-development initialization, adoption, protocol selector, second source engine or old-wire fallback is included. Native Ghost API versioning and the `ghost-owned-fragment-v1` extraction profile are current platform/native implementation details.
-
-Maintainers refresh the portable SDK offline with `node scripts/refresh-contract.mjs /path/to/reviewed/adapter-contract`, using exact shared commit `09d77c0209835c2d996aad294d161f167c7bd838`. The refresh checks fixed hashes and stages metadata/target validation before writes. Four shared members, including embedded IDNA dependency/license receipts, and three fixed development fixtures are copied from that source. No customer runtime download, native ownership grant or historical journal retagging is performed. The additive attention-recovery capability keeps its separate R6 identity; it is not the current artifact candidate label.
-
-## Development and ordinary-package checks
-
-The adapter requires **Node 22.12 or newer**, matching its existing sanitizer dependency; no installed runtime is upgraded by package tooling. Use this checkout's declared dependencies: `npm ci`, `npm run check`, then `npm test`. The normal browser builder stages loader JavaScript, its local-font CSS and native rich-content JavaScript before writing. It carries actual dependency terms and a source/output/font ledger in `public/browser-build-provenance.json`. Missing required terms, linked managed targets or changed previously recorded notices stop the build. Only obsolete notices still matching the previous generated ledger may be removed; unknown files remain for explicit reconciliation. The optional `DISCUSSIONBRIDGE_BUILD_RUNTIME_ROOT` is read-only maintainer fixture reuse, not an installation hook or runtime SDK download.
-
-Run `node scripts/check-package.mjs /path/to/installed/ghost-discussion-bridge` on a normal `npm pack` installation. It checks the pinned SDK, actual build inputs/three outputs and complete notice inventory without changing files. The existing shipped `npm-shrinkwrap.json` remains the normal lock; no private release builder or user-host browser compilation is required. Tests/fixtures and the test-only resolver are not shipped. CI exercises the exact Node22.12.0 minimum, current Node22 and Node24, complete tests, ordinary build/pack and an isolated normal consumer with actual SDK corpus, cold product imports and both static dependency co-import orders. Those checks do not install Ghost, change a forum/theme/service or qualify an installed deployment.
-
-Real-browser tests use an installed headless Chrome, or `DISCUSSIONBRIDGE_BROWSER_EXECUTABLE`, with fresh synthetic content and no signed-in profile. The loader test fulfills only two synthetic asset URLs from the actual built JS/CSS and blocks outside traffic; the native rich-content test blocks all page network. Windows file-link limitations are explicit skips and must execute on Linux CI, not be treated as passed locally.
-
-Start with [installation](docs/INSTALLATION.md), [managed hosting](docs/MANAGED_HOSTING.md) and the [configuration example](docs/adapter.env.example). [Demo integration](demo/README.md) describes native per-mode placeholders; it is not a deployed demo or qualification record.
-
-Current bounded limitations:
-
-- The To writer captures original HTML, Lexical and native context with its article URL, retains the complete prepared copy privately, and prepares supported text/rich structures/lists/tables/links/images before full hash/count/excerpt. Understood scalar, responsive-image and inline CSS URL targets preserve the original article base. Unfamiliar inert classes/attributes and nontext content are retained. Actual unsupported function/data, audience context or reference grammar produces a specific local limitation; no blanket source-format or recipe-approval gate is added. Author fixtures do not qualify installed native card or destination behavior.
-- Original source URL movement uses the same writer and durable V4-28/29/30/31 journal, actual same-post slug/CAS and independent complete public article/challenge proof. It requires the actual installed native/theme/permalink integration; [configuration and recovery](docs/SOURCE_NATIVE_URL_MOVES.md) describe concrete unsupported cases and qualification limits.
-- A validated To02/29 `content_preservation_unavailable` HTTP422 is a permanent rejection. The source writer retains the exact failed request/capture/response and accepted history, shows the safe code and suppresses duplicate-webhook replay. A genuinely changed current snapshot—including ordinarily revision-bearing title/authorship/actual-date metadata—may use the ordinary current-authority/predecessor path; identical input after receiver-only repair has no automatic retry. Uncertain transport retains exact recovery. This code is not a From work failure.
-- A witnessed definitive To02 `invalid_field` HTTP422 also retains the refused request and suppresses unchanged automatic replay. After correcting the cause, use that source's protected **Retry this source** action. It repeats current native/connection/ownership/predecessor checks, preserves the unchanged source revision/article/dates, and durably links one fresh request to the refusal before dispatch. Unknown historical Error diagnostics stay unknown. Another refusal stops again; uncertain requests reconcile with their existing identity, and genuine native edits use normal publication.
-- The present native renderer cannot preserve video/audio/iframe/embed/object content, source script behavior/data, detected event handlers, form controls or native disclosure controls. Its local diagnostic names the lost facility before a write; the operator must decide how to proceed when supported handling is unavailable. Displayed escaped code remains content. Retaining the original is not an equivalent functional copy, and no receiver Work disposition or execution policy is fabricated.
-- Phil approved native `published_at` as the actual source-activity ordering projection for Bridge-owned Discourse copies: genuine unedited creation or actual captured edit, including an already-edited first Ghost copy. Both source dates stay retained/displayed; native `created_at` and actual `updated_at` collision checks remain native facts. First publication needs the actual installed stable `/{slug}/` permalink fact; date-token movement and unknown activity projection remain concrete local limitations. Unrelated Ghost originals are unchanged. Native corpus/theme/archive behavior, Linux installation, authenticated public sessions, backup/restore and sandbox qualification remain later executed pipeline work.
-
-Signed native close notifications now dispatch current ID or explicit previous ID with accepted exact scope to the actual native lifecycle observer. Empty/null/omitted content is not deletion proof. Capture the installed Ghost version's ordinary deletion identity payload and register its unpublish/delete hooks before native qualification; ID-less notifications remain unsupported. Established A can close with exact CAS while uncertain publish B stays captured and unreplayed; mismatch, source movement and races retain reconciliation. A local package is evidence only for its recorded source identity; archives from earlier source states remain historical.
-
-After the ordinary checks above, create a normal local candidate with `npm pack --json --ignore-scripts --offline --pack-destination <fresh-directory>`. Use npm's emitted file inventory for the actual package members rather than a fixed count in this guide. Packing uses the existing browser assets; it does not install dependencies or regenerate them. Archive readback and isolated package checks do not establish native installation or release qualification.
+V4 Alpha source [`v0.4.0-alpha.1.ghost-adapter.1`](https://github.com/DiscussionBridge/ghost-discussion-bridge/tree/v0.4.0-alpha.1.ghost-adapter.1). [Versions and live status](https://docs.discussionbridge.dev/versions-and-live-status/)
