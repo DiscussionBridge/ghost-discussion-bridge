@@ -217,7 +217,7 @@ export async function publishCmsSource(record, config, store, client, { loadCurr
       }
       // A genuinely changed complete prepared snapshot can be a new edition
       // without inventing native editor/date changes. Candidate labels alone
-      // do not affect edition, and an exact accepted edition returned above.
+      // do not affect the edition.
       if (retry) {
         await assertWriter();
         await verifyCurrentSource();
